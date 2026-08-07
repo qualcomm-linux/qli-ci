@@ -218,6 +218,14 @@ jobs:
           echo "ℹ️ Updated upstream.conf:"
           cat upstream.conf | sed 's/^/   /'
 
+      - name: Sync PR hook workflow template
+        run: |
+          cd ./package-repo
+
+          mkdir -p .github/workflows
+          cp ../qli-ci/.github/pkg-workflows/debian/pkg-pr-hook.yml .github/workflows/pkg-pr-hook.yml
+          git add .github/workflows/pkg-pr-hook.yml
+
       - name: Bump Debian Changelog
         env:
           VARS_DEB_PKG_BOT_CI_NAME: ${{vars.DEB_PKG_BOT_CI_NAME}}

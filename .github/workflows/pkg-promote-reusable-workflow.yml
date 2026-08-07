@@ -382,6 +382,13 @@ jobs:
 
           ../qli-ci/scripts/merge_debian_packaging_upstream ${INPUTS_UPSTREAM_TAG}
 
+      - name: Sync PR hook workflow template
+        working-directory: ./package-repo
+        run: |
+          mkdir -p .github/workflows
+          cp ../qli-ci/.github/pkg-workflows/debian/pkg-pr-hook.yml .github/workflows/pkg-pr-hook.yml
+          git add .github/workflows/pkg-pr-hook.yml
+
       - name: Promote Changelog
         working-directory: ./package-repo
         env:

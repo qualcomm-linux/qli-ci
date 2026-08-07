@@ -67,6 +67,8 @@ on:
         required: false
       DEBUSINE_TOKEN:
         required: false
+      DEB_PKG_BOT_CI_TOKEN:
+        required: true
 
     outputs:
       family:
@@ -112,6 +114,7 @@ jobs:
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ inputs.qli-ci-ref }}
+          token: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           path: qli-ci
 
       - name: Resolve family and suite from branch
@@ -207,6 +210,7 @@ jobs:
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ inputs.qli-ci-ref }}
+          token: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           path: qli-ci
           fetch-depth: 1
           sparse-checkout: |

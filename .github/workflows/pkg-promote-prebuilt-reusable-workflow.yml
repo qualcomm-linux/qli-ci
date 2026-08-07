@@ -47,6 +47,10 @@ on:
         required: false
         default: ""
 
+    secrets:
+      DEB_PKG_BOT_CI_TOKEN:
+        required: true
+
 permissions:
   contents: write
   packages: read
@@ -75,6 +79,7 @@ jobs:
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{inputs.qli-ci-ref}}
+          token: ${{secrets.DEB_PKG_BOT_CI_TOKEN}}
           path: ./qli-ci
           fetch-depth: 1
           sparse-checkout: |

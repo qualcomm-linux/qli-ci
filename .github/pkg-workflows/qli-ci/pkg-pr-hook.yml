@@ -23,3 +23,4 @@ jobs:
     secrets:
       DEBUSINE_USER: ${{ secrets.DEBUSINE_USER }}
       DEBUSINE_TOKEN: ${{ secrets.DEBUSINE_TOKEN }}
+      DEB_PKG_BOT_CI_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}

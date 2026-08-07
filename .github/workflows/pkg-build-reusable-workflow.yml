@@ -18,11 +18,6 @@ on:
         type: string
         required: true
 
-      source-ref:
-        description: Optional ref to check out for build content; defaults to debian-ref
-        type: string
-        default: ""
-
       run-lintian:
         description: Run lintian or not during the Docker pkg-builder build path
         type: boolean
@@ -108,7 +103,6 @@ jobs:
     name: Resolve branch target
     runs-on: ubuntu-latest
     outputs:
-      checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
       family: ${{ steps.resolve.outputs.family }}
       force_docker_build: ${{ steps.resolve.outputs.force_docker_build }}
       suite: ${{ steps.resolve.outputs.suite }}
@@ -128,7 +122,6 @@ jobs:
           BASE_REF_INPUT: ${{ github.base_ref }}
           DEBUSINE_TOKEN: ${{ secrets.DEBUSINE_TOKEN }}
           FORCE_DOCKER_BUILD: ${{ inputs.force-docker-build }}
-          SOURCE_REF_INPUT: ${{ inputs.source-ref }}
         run: |
           set -euo pipefail
 
@@ -151,10 +144,6 @@ jobs:
           }
 
           source_ref=""
-          checkout_ref="$DEBIAN_REF_INPUT"
-          if [[ -n "$SOURCE_REF_INPUT" ]]; then
-            checkout_ref="$SOURCE_REF_INPUT"
-          fi
           if resolved_kv="$("$RESOLVER_SCRIPT" "$DEBIAN_REF_INPUT")"; then
             parse_resolved_values "$resolved_kv"
             source_ref="$normalized_ref"
@@ -191,7 +180,6 @@ jobs:
 
           echo "::notice title=Resolved build target::debian-ref='${DEBIAN_REF_INPUT}', source-ref='${source_ref}', family='${family}', suite='${suite}', force-docker-build='${force_docker_build}'"
 
-          echo "checkout_ref=$checkout_ref" >> "$GITHUB_OUTPUT"
           echo "family=$family" >> "$GITHUB_OUTPUT"
           echo "force_docker_build=$force_docker_build" >> "$GITHUB_OUTPUT"
           echo "suite=$suite" >> "$GITHUB_OUTPUT"
@@ -228,7 +216,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v5
         with:
-          ref: ${{ needs.resolve.outputs.checkout_ref }}
+          ref: ${{ inputs.debian-ref }}
           path: package-repo
           fetch-depth: 0
           fetch-tags: true
@@ -301,7 +289,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v5
         with:
-          ref: ${{ needs.resolve.outputs.checkout_ref }}
+          ref: ${{ inputs.debian-ref }}
           path: srcpkg
           fetch-depth: 0
           fetch-tags: true

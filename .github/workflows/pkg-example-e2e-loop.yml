@@ -35,7 +35,7 @@ jobs:
     name: pkg-example e2e loop
     runs-on: ubuntu-latest
     env:
-      SUMMARY_FILE: ${{ runner.temp }}/pkg-example-e2e-summary.md
+      SUMMARY_FILE: /tmp/pkg-example-e2e-summary.md
 
     steps:
       - name: Checkout qli-ci

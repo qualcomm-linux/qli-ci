@@ -36,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-summary.md
+      STATE_FILE: /tmp/pkg-example-e2e-state.json
 
     steps:
       - name: Checkout qli-ci
@@ -78,18 +79,270 @@ jobs:
           echo "qli_ci_pr_number=${qli_ci_pr_number}" >> "$GITHUB_OUTPUT"
           echo "is_fork_pr=${is_fork_pr}" >> "$GITHUB_OUTPUT"
 
-      - name: Run pkg-example e2e loop
-        id: loop
+      - name: Initialize e2e state
+        env:
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          QLI_CI_PR_NUMBER: ${{ steps.resolve.outputs.qli_ci_pr_number }}
+          IS_FORK_PR: ${{ steps.resolve.outputs.is_fork_pr }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh init
+
+      - name: Prepare temp pkg-example branch
         continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
-          QLI_CI_PR_NUMBER: ${{ steps.resolve.outputs.qli_ci_pr_number }}
-          IS_FORK_PR: ${{ steps.resolve.outputs.is_fork_pr }}
+          STATE_FILE: ${{ env.STATE_FILE }}
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./scripts/pkg_example_e2e_loop.sh
+          ./scripts/pkg_example_e2e_loop.sh prepare-temp-branch
+
+      - name: Debian reset
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh reset-lane debian
+
+      - name: Debian v1.0.0 promote
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh promote-tag debian v1.0.0
+
+      - name: Debian v1.0.0 sync PR hook
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh sync-pr-hook debian v1.0.0
+
+      - name: Debian v1.0.0 PR build
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh wait-pr-build debian v1.0.0
+
+      - name: Debian v1.0.0 merge PR
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh merge-pr debian v1.0.0
+
+      - name: Debian v1.0.0 release
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh release-tag debian v1.0.0
+
+      - name: Debian v1.1.0 promote
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh promote-tag debian v1.1.0
+
+      - name: Debian v1.1.0 sync PR hook
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh sync-pr-hook debian v1.1.0
+
+      - name: Debian v1.1.0 PR build
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh wait-pr-build debian v1.1.0
+
+      - name: Debian v1.1.0 merge PR
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh merge-pr debian v1.1.0
+
+      - name: Debian v1.1.0 release
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh release-tag debian v1.1.0
+
+      - name: Ubuntu reset
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh reset-lane ubuntu
+
+      - name: Ubuntu seed branch
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh seed-ubuntu
+
+      - name: Ubuntu v1.0.0 promote
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh promote-tag ubuntu v1.0.0
+
+      - name: Ubuntu v1.0.0 sync PR hook
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.0.0
+
+      - name: Ubuntu v1.0.0 PR build
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.0.0
+
+      - name: Ubuntu v1.0.0 merge PR
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh merge-pr ubuntu v1.0.0
+
+      - name: Ubuntu v1.0.0 release
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh release-tag ubuntu v1.0.0
+
+      - name: Ubuntu v1.1.0 promote
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh promote-tag ubuntu v1.1.0
+
+      - name: Ubuntu v1.1.0 sync PR hook
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.1.0
+
+      - name: Ubuntu v1.1.0 PR build
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.1.0
+
+      - name: Ubuntu v1.1.0 merge PR
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh merge-pr ubuntu v1.1.0
+
+      - name: Ubuntu v1.1.0 release
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh release-tag ubuntu v1.1.0
+
+      - name: Build loop summary
+        if: ${{ always() }}
+        env:
+          STATE_FILE: ${{ env.STATE_FILE }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh write-summary
 
       - name: Append summary to workflow
         if: ${{ always() }}
@@ -97,7 +350,6 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-
           if [[ -f "${SUMMARY_FILE}" ]]; then
             cat "${SUMMARY_FILE}" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -137,8 +389,20 @@ jobs:
               | gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --method POST --input - >/dev/null
           fi
 
-      - name: Fail if loop failed
-        if: ${{ steps.loop.outcome == 'failure' }}
+      - name: Cleanup temp branch and workspace
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
         run: |
-          echo "pkg-example e2e loop failed"
-          exit 1
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh cleanup
+
+      - name: Fail if loop had failures
+        if: ${{ always() }}
+        env:
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh fail-if-needed

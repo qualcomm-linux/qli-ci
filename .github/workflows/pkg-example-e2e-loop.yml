@@ -45,26 +45,27 @@ jobs:
         id: resolve
         env:
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_QLI_CI_REF: ${{ inputs.qli-ci-ref }}
-          INPUT_QLI_CI_PR_NUMBER: ${{ inputs.qli-ci-pr-number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
           GITHUB_SHA_VALUE: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          qli_ci_ref="${INPUT_QLI_CI_REF}"
-          qli_ci_pr_number="${INPUT_QLI_CI_PR_NUMBER}"
+          qli_ci_ref=""
+          qli_ci_pr_number=""
           is_fork_pr="false"
 
           if [[ "${EVENT_NAME}" == "pull_request" ]]; then
-            qli_ci_ref="${PR_HEAD_SHA}"
-            qli_ci_pr_number="${PR_NUMBER}"
-            if [[ "${PR_IS_FORK}" == "true" ]]; then
+            qli_ci_ref="$(jq -r '.pull_request.head.sha // empty' "$GITHUB_EVENT_PATH")"
+            qli_ci_pr_number="$(jq -r '.pull_request.number // empty' "$GITHUB_EVENT_PATH")"
+            pr_is_fork="$(jq -r '.pull_request.head.repo.fork // false' "$GITHUB_EVENT_PATH")"
+            if [[ "${pr_is_fork}" == "true" ]]; then
               is_fork_pr="true"
             fi
-          elif [[ -z "${qli_ci_ref}" ]]; then
+          elif [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            qli_ci_ref="$(jq -r '.inputs["qli-ci-ref"] // empty' "$GITHUB_EVENT_PATH")"
+            qli_ci_pr_number="$(jq -r '.inputs["qli-ci-pr-number"] // empty' "$GITHUB_EVENT_PATH")"
+          fi
+
+          if [[ -z "${qli_ci_ref}" ]]; then
             qli_ci_ref="${GITHUB_SHA_VALUE}"
           fi
 

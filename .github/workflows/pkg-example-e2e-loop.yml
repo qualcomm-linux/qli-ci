@@ -23,7 +23,7 @@ on:
 
 concurrency:
   group: pkg-example-e2e-loop-global
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read

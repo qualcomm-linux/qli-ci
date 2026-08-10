@@ -1,0 +1,143 @@
+name: pkg-example e2e loop
+
+description: |
+  Runs a full pkg-example integration loop against the qli-ci ref under test:
+  reset -> promote -> promotion PR build -> merge -> release
+  for Debian and Ubuntu lanes with tags v1.0.0 and v1.1.0.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      qli-ci-ref:
+        description: qli-ci ref (commit SHA or branch) to test. Defaults to current commit SHA.
+        type: string
+        required: false
+        default: ""
+      qli-ci-pr-number:
+        description: Optional qli-ci PR number for manual runs (used for reporting only).
+        type: string
+        required: false
+        default: ""
+
+concurrency:
+  group: pkg-example-e2e-loop-global
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  pkg-example-e2e-loop:
+    name: pkg-example e2e loop
+    runs-on: ubuntu-latest
+    env:
+      SUMMARY_FILE: ${{ runner.temp }}/pkg-example-e2e-summary.md
+
+    steps:
+      - name: Checkout qli-ci
+        uses: actions/checkout@v5
+
+      - name: Resolve run parameters
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_QLI_CI_REF: ${{ inputs.qli-ci-ref }}
+          INPUT_QLI_CI_PR_NUMBER: ${{ inputs.qli-ci-pr-number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          qli_ci_ref="${INPUT_QLI_CI_REF}"
+          qli_ci_pr_number="${INPUT_QLI_CI_PR_NUMBER}"
+          is_fork_pr="false"
+
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            qli_ci_ref="${PR_HEAD_SHA}"
+            qli_ci_pr_number="${PR_NUMBER}"
+            if [[ "${PR_IS_FORK}" == "true" ]]; then
+              is_fork_pr="true"
+            fi
+          elif [[ -z "${qli_ci_ref}" ]]; then
+            qli_ci_ref="${GITHUB_SHA_VALUE}"
+          fi
+
+          if [[ -z "${qli_ci_ref}" ]]; then
+            echo "Unable to resolve qli-ci ref under test" >&2
+            exit 1
+          fi
+
+          echo "qli_ci_ref=${qli_ci_ref}" >> "$GITHUB_OUTPUT"
+          echo "qli_ci_pr_number=${qli_ci_pr_number}" >> "$GITHUB_OUTPUT"
+          echo "is_fork_pr=${is_fork_pr}" >> "$GITHUB_OUTPUT"
+
+      - name: Run pkg-example e2e loop
+        id: loop
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          QLI_CI_PR_NUMBER: ${{ steps.resolve.outputs.qli_ci_pr_number }}
+          IS_FORK_PR: ${{ steps.resolve.outputs.is_fork_pr }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh
+
+      - name: Append summary to workflow
+        if: ${{ always() }}
+        env:
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+
+          if [[ -f "${SUMMARY_FILE}" ]]; then
+            cat "${SUMMARY_FILE}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## pkg-example e2e loop" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "No summary was generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upsert PR summary comment
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+
+          marker="<!-- pkg-example-e2e-loop -->"
+          if [[ -f "${SUMMARY_FILE}" ]]; then
+            body_content="$(cat "${SUMMARY_FILE}")"
+          else
+            body_content="## pkg-example e2e loop\n\nNo summary was generated."
+          fi
+
+          full_body="${marker}"$'\n\n'"${body_content}"
+
+          comments_json="$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate)"
+          existing_id="$(jq -r --arg marker "$marker" '.[] | select(.body | contains($marker)) | .id' <<<"$comments_json" | tail -n 1)"
+
+          if [[ -n "${existing_id}" ]]; then
+            jq -n --arg body "$full_body" '{body: $body}' \
+              | gh api "repos/${REPO}/issues/comments/${existing_id}" --method PATCH --input - >/dev/null
+          else
+            jq -n --arg body "$full_body" '{body: $body}' \
+              | gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --method POST --input - >/dev/null
+          fi
+
+      - name: Fail if loop failed
+        if: ${{ steps.loop.outcome == 'failure' }}
+        run: |
+          echo "pkg-example e2e loop failed"
+          exit 1

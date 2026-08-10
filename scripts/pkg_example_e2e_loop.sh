@@ -10,6 +10,8 @@ QLI_CI_REF="${QLI_CI_REF:-}"
 QLI_CI_PR_NUMBER="${QLI_CI_PR_NUMBER:-}"
 IS_FORK_PR="${IS_FORK_PR:-false}"
 BOT_TOKEN="${BOT_TOKEN:-}"
+ENABLE_DEBIAN_PATH_RAW="${ENABLE_DEBIAN_PATH:-1}"
+ENABLE_UBUNTU_PATH_RAW="${ENABLE_UBUNTU_PATH:-1}"
 
 TAGS=("v1.0.0" "v1.1.0")
 
@@ -31,6 +33,17 @@ require_cmd() {
     echo "Missing required command: $cmd" >&2
     exit 1
   fi
+}
+
+normalize_bool() {
+  local raw="${1:-}"
+  local value
+  value="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    0|false|no|off) echo "false" ;;
+    1|true|yes|on|"") echo "true" ;;
+    *) echo "true" ;;
+  esac
 }
 
 gh_bot() {
@@ -150,6 +163,17 @@ get_tag_phase_status() {
   local tag="$2"
   local phase="$3"
   state_get ".lanes[\"$lane\"].tags[\"$tag\"][\"$phase\"].status"
+}
+
+lane_is_enabled() {
+  local lane="$1"
+  case "$lane" in
+    debian) state_get '.meta.enable_debian' ;;
+    ubuntu) state_get '.meta.enable_ubuntu' ;;
+    *)
+      echo "false"
+      ;;
+  esac
 }
 
 lane_branch() {
@@ -367,7 +391,10 @@ cmd_init() {
   fi
 
   local ref_short temp_branch
+  local enable_debian enable_ubuntu
   ref_short="$(printf '%s' "$QLI_CI_REF" | cut -c1-8)"
+  enable_debian="$(normalize_bool "$ENABLE_DEBIAN_PATH_RAW")"
+  enable_ubuntu="$(normalize_bool "$ENABLE_UBUNTU_PATH_RAW")"
 
   if [[ -n "$QLI_CI_PR_NUMBER" ]]; then
     temp_branch="ci/qli-loop/pr-${QLI_CI_PR_NUMBER}-${ref_short}"
@@ -381,6 +408,8 @@ cmd_init() {
     --arg temp_branch "$temp_branch" \
     --arg summary "$SUMMARY_FILE" \
     --arg skip "$IS_FORK_PR" \
+    --argjson enable_debian "$enable_debian" \
+    --argjson enable_ubuntu "$enable_ubuntu" \
     '{
       meta: {
         qli_ci_ref: $qli_ref,
@@ -388,6 +417,8 @@ cmd_init() {
         temp_branch: $temp_branch,
         summary_file: $summary,
         skip: ($skip == "true"),
+        enable_debian: $enable_debian,
+        enable_ubuntu: $enable_ubuntu,
         prepared: false,
         overall_failure: false,
         note: "",
@@ -443,6 +474,8 @@ cmd_init() {
 
   if [[ "$IS_FORK_PR" == "true" ]]; then
     state_set_meta_str "note" "Fork PR detected; skipping because required secrets are not available to fork-triggered pull_request runs."
+  elif [[ "$enable_debian" != "true" || "$enable_ubuntu" != "true" ]]; then
+    state_set_meta_str "note" "Path toggles: ENABLE_DEBIAN_PATH=${enable_debian}, ENABLE_UBUNTU_PATH=${enable_ubuntu}"
   fi
 
   write_output "temp_branch" "$temp_branch"
@@ -454,6 +487,10 @@ cmd_prepare_temp_branch() {
   ensure_state
 
   if [[ "$(state_get '.meta.skip')" == "true" ]]; then
+    return 0
+  fi
+
+  if [[ "$(state_get '.meta.enable_debian')" != "true" && "$(state_get '.meta.enable_ubuntu')" != "true" ]]; then
     return 0
   fi
 
@@ -526,6 +563,11 @@ cmd_reset_lane() {
     return 0
   fi
 
+  if [[ "$(lane_is_enabled "$lane")" != "true" ]]; then
+    set_lane_phase "$lane" "reset" "skipped" ""
+    return 0
+  fi
+
   if [[ "$(state_get '.meta.prepared')" != "true" ]]; then
     set_lane_phase "$lane" "reset" "skipped" ""
     return 0
@@ -548,6 +590,11 @@ cmd_seed_ubuntu() {
   ensure_state
 
   if [[ "$(state_get '.meta.skip')" == "true" ]]; then
+    set_lane_phase "ubuntu" "seed" "skipped" ""
+    return 0
+  fi
+
+  if [[ "$(lane_is_enabled "ubuntu")" != "true" ]]; then
     set_lane_phase "ubuntu" "seed" "skipped" ""
     return 0
   fi
@@ -595,6 +642,11 @@ cmd_promote_tag() {
     return 0
   fi
 
+  if [[ "$(lane_is_enabled "$lane")" != "true" ]]; then
+    set_tag_phase "$lane" "$tag" "promote" "skipped" ""
+    return 0
+  fi
+
   if [[ "$(get_lane_phase_status "$lane" "reset")" != "success" ]]; then
     set_tag_phase "$lane" "$tag" "promote" "skipped" ""
     return 0
@@ -633,6 +685,11 @@ cmd_sync_pr_hook() {
   local tag="$2"
 
   if [[ "$(state_get '.meta.skip')" == "true" ]]; then
+    set_tag_phase "$lane" "$tag" "sync" "skipped" ""
+    return 0
+  fi
+
+  if [[ "$(lane_is_enabled "$lane")" != "true" ]]; then
     set_tag_phase "$lane" "$tag" "sync" "skipped" ""
     return 0
   fi
@@ -698,6 +755,11 @@ cmd_wait_pr_build() {
     return 0
   fi
 
+  if [[ "$(lane_is_enabled "$lane")" != "true" ]]; then
+    set_tag_phase "$lane" "$tag" "prbuild" "skipped" ""
+    return 0
+  fi
+
   if [[ "$(get_tag_phase_status "$lane" "$tag" "sync")" != "success" ]]; then
     set_tag_phase "$lane" "$tag" "prbuild" "skipped" ""
     return 0
@@ -729,6 +791,11 @@ cmd_merge_pr() {
   local tag="$2"
 
   if [[ "$(state_get '.meta.skip')" == "true" ]]; then
+    set_tag_phase "$lane" "$tag" "merge" "skipped" ""
+    return 0
+  fi
+
+  if [[ "$(lane_is_enabled "$lane")" != "true" ]]; then
     set_tag_phase "$lane" "$tag" "merge" "skipped" ""
     return 0
   fi
@@ -768,6 +835,11 @@ cmd_release_tag() {
     return 0
   fi
 
+  if [[ "$(lane_is_enabled "$lane")" != "true" ]]; then
+    set_tag_phase "$lane" "$tag" "release" "skipped" ""
+    return 0
+  fi
+
   if [[ "$(get_tag_phase_status "$lane" "$tag" "merge")" != "success" ]]; then
     set_tag_phase "$lane" "$tag" "release" "skipped" ""
     return 0
@@ -799,10 +871,13 @@ cmd_write_summary() {
   fi
 
   local qli_ci_ref qli_ci_pr_number temp_branch note
+  local enable_debian enable_ubuntu
   qli_ci_ref="$(state_get '.meta.qli_ci_ref')"
   qli_ci_pr_number="$(state_get '.meta.qli_ci_pr_number')"
   temp_branch="$(state_get '.meta.temp_branch')"
   note="$(state_get '.meta.note')"
+  enable_debian="$(state_get '.meta.enable_debian')"
+  enable_ubuntu="$(state_get '.meta.enable_ubuntu')"
 
   {
     echo "## pkg-example e2e loop"
@@ -812,6 +887,7 @@ cmd_write_summary() {
       echo "- qli-ci PR: #$qli_ci_pr_number"
     fi
     echo "- pkg-example temp branch: \`$temp_branch\`"
+    echo "- path toggles: debian=${enable_debian}, ubuntu=${enable_ubuntu}"
     echo "- result: **$overall_status**"
     if [[ -n "$note" ]]; then
       echo "- note: $note"

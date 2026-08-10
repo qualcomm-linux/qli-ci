@@ -37,6 +37,8 @@ jobs:
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-summary.md
       STATE_FILE: /tmp/pkg-example-e2e-state.json
+      ENABLE_DEBIAN_PATH: ${{ vars.ENABLE_DEBIAN_PATH }}
+      ENABLE_UBUNTU_PATH: ${{ vars.ENABLE_UBUNTU_PATH }}
 
     steps:
       - name: Checkout qli-ci

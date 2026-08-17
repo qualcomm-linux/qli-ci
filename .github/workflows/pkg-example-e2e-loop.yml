@@ -94,7 +94,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh init
 
       - name: Prepare temp pkg-example branch
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
@@ -105,8 +104,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh prepare-temp-branch
 
       - name: Debian reset
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -115,8 +112,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh reset-lane debian
 
       - name: Debian v1.0.0 promote
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -125,8 +120,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh promote-tag debian v1.0.0
 
       - name: Debian v1.0.0 sync PR hook
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
@@ -136,8 +129,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh sync-pr-hook debian v1.0.0
 
       - name: Debian v1.0.0 PR build
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -146,8 +137,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh wait-pr-build debian v1.0.0
 
       - name: Debian v1.0.0 merge PR
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -156,8 +145,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh merge-pr debian v1.0.0
 
       - name: Debian v1.0.0 release
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -166,8 +153,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh release-tag debian v1.0.0
 
       - name: Debian v1.1.0 promote
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -176,8 +161,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh promote-tag debian v1.1.0
 
       - name: Debian v1.1.0 sync PR hook
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
@@ -187,8 +170,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh sync-pr-hook debian v1.1.0
 
       - name: Debian v1.1.0 PR build
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -197,8 +178,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh wait-pr-build debian v1.1.0
 
       - name: Debian v1.1.0 merge PR
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -207,8 +186,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh merge-pr debian v1.1.0
 
       - name: Debian v1.1.0 release
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -301,7 +278,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh init
 
       - name: Prepare temp pkg-example branch
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
@@ -312,8 +288,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh prepare-temp-branch
 
       - name: Ubuntu reset
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -322,8 +296,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh reset-lane ubuntu
 
       - name: Ubuntu seed branch
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -332,8 +304,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh seed-ubuntu
 
       - name: Ubuntu v1.0.0 promote
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -342,8 +312,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh promote-tag ubuntu v1.0.0
 
       - name: Ubuntu v1.0.0 sync PR hook
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
@@ -353,8 +321,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.0.0
 
       - name: Ubuntu v1.0.0 PR build
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -363,8 +329,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.0.0
 
       - name: Ubuntu v1.0.0 merge PR
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -373,8 +337,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh merge-pr ubuntu v1.0.0
 
       - name: Ubuntu v1.0.0 release
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -383,8 +345,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh release-tag ubuntu v1.0.0
 
       - name: Ubuntu v1.1.0 promote
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -393,8 +353,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh promote-tag ubuntu v1.1.0
 
       - name: Ubuntu v1.1.0 sync PR hook
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
@@ -404,8 +362,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.1.0
 
       - name: Ubuntu v1.1.0 PR build
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -414,8 +370,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.1.0
 
       - name: Ubuntu v1.1.0 merge PR
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -424,8 +378,6 @@ jobs:
           ./scripts/pkg_example_e2e_loop.sh merge-pr ubuntu v1.1.0
 
       - name: Ubuntu v1.1.0 release
-        if: ${{ always() }}
-        continue-on-error: true
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           STATE_FILE: ${{ env.STATE_FILE }}
@@ -496,11 +448,3 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/pkg_example_e2e_loop.sh cleanup
-
-      - name: Fail if loop had failures
-        if: ${{ always() }}
-        env:
-          STATE_FILE: ${{ env.STATE_FILE }}
-        run: |
-          set -euo pipefail
-          ./scripts/pkg_example_e2e_loop.sh fail-if-needed

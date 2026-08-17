@@ -588,10 +588,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   Upload_to_S3:
-    name: Upload to S3
+    name: Upload to S3 (AXIOM testing)
     if: >-
       ${{
         always() &&
+        vars.AXIOM_ENABLE == 'true' &&
         github.event_name == 'pull_request' &&
         needs.resolve.outputs.family == 'ubuntu' &&
         needs.docker-build.result == 'success' &&

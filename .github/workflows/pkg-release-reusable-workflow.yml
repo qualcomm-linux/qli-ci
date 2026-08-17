@@ -778,8 +778,8 @@ jobs:
           destination: qualcomm-linux/pkg/proposed/${{ github.run_id }}-${{ github.run_attempt }}/
 
   upload-debs-to-s3:
-    name: Upload Debs to S3 (Ubuntu)
-    if: ${{ needs.build-and-test.outputs.family == 'ubuntu' }}
+    name: Upload Debs to S3 (Ubuntu, AXIOM testing)
+    if: ${{ needs.build-and-test.outputs.family == 'ubuntu' && vars.AXIOM_ENABLE == 'true' }}
     needs:
       - build-and-test
     runs-on: lecore-prd-u2404-arm64-xlrg-od-ephem

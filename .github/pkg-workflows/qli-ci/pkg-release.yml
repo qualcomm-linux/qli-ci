@@ -2,7 +2,7 @@ name: Release
 description: |
   Release a new package version.
   This workflow is manually triggered via workflow_dispatch.
-  Set repository variable IS_TEST_PKG=1 to run in test mode.
+  Set repository variable IS_TEST_PKG=true to run in test mode.
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
     with:
       qli-ci-ref: main
       debian-branch: ${{ github.event.inputs.debian-branch }}
-      test-run: ${{ vars.IS_TEST_PKG == '1' || vars.IS_TEST_PKG == 'true' || vars['is-test-pkg'] == '1' || vars['is-test-pkg'] == 'true' }}
+      test-run: ${{ vars.IS_TEST_PKG == 'true' }}
       debusine-parent-workspace: ${{ vars.DEBUSINE_PARENT_WORKSPACE }}
     secrets:
       PAT: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}

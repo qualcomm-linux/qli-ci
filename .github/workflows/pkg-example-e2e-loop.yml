@@ -27,12 +27,11 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
 
 jobs:
   debian-lane:
     name: pkg-example e2e (debian lane)
+    if: ${{ vars.ENABLE_DEBIAN_PATH == '1' }}
     runs-on: ubuntu-latest
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-summary.md
@@ -230,7 +229,7 @@ jobs:
     name: pkg-example e2e (ubuntu lane)
     runs-on: ubuntu-latest
     needs: [debian-lane]
-    if: ${{ always() }}
+    if: ${{ always() && vars.ENABLE_UBUNTU_PATH == '1' }}
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-summary.md
       STATE_FILE: /tmp/pkg-example-e2e-state.json
@@ -279,10 +278,27 @@ jobs:
           echo "is_fork_pr=${is_fork_pr}" >> "$GITHUB_OUTPUT"
 
       - name: Download shared e2e state
+        id: download_state
+        if: ${{ needs.debian-lane.result == 'success' }}
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: pkg-example-e2e-state-${{ github.run_id }}
           path: /tmp
+
+      - name: Initialize e2e state (ubuntu fallback)
+        if: ${{ needs.debian-lane.result != 'success' || steps.download_state.outcome == 'failure' }}
+        env:
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          QLI_CI_PR_NUMBER: ${{ steps.resolve.outputs.qli_ci_pr_number }}
+          IS_FORK_PR: ${{ steps.resolve.outputs.is_fork_pr }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+          ENABLE_DEBIAN_PATH: ${{ env.ENABLE_DEBIAN_PATH }}
+          ENABLE_UBUNTU_PATH: ${{ env.ENABLE_UBUNTU_PATH }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh init
 
       - name: Prepare temp pkg-example branch
         continue-on-error: true
@@ -444,7 +460,7 @@ jobs:
         if: ${{ always() && github.event_name == 'pull_request' }}
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}

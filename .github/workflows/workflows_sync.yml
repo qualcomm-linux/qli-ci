@@ -33,8 +33,7 @@ on:
           Used only when direct-push=true. Leave empty to target all pkg repos.
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   approval-gate:
@@ -50,6 +49,9 @@ jobs:
     needs: approval-gate
     if: ${{ always() && (inputs.confirmation == false || needs.approval-gate.result == 'success') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
 

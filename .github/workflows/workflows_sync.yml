@@ -37,7 +37,18 @@ permissions:
   pull-requests: write
 
 jobs:
+  approval-gate:
+    if: ${{ inputs.confirmation == true }}
+    runs-on: ubuntu-latest
+    environment: workflow_sync_approval
+    steps:
+      - name: Await approval for mutating sync
+        run: |
+          echo "workflow_sync_approval approved; proceeding with sync."
+
   sync:
+    needs: approval-gate
+    if: ${{ always() && (inputs.confirmation == false || needs.approval-gate.result == 'success') }}
     runs-on: ubuntu-latest
 
     steps:

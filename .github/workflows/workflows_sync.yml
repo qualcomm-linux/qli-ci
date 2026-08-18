@@ -23,6 +23,14 @@ on:
           Tick to bypass PR creation and push sync commits directly to target
           branches.
           Requires confirmation=true.
+      direct-push-repos:
+        type: string
+        required: false
+        default: ""
+        description: |
+          Comma-separated list of pkg repos to apply direct-push to
+          (for example: pkg-fastrpc,pkg-template).
+          Used only when direct-push=true. Leave empty to target all pkg repos.
 
 permissions:
   contents: write
@@ -49,6 +57,7 @@ jobs:
           BOT_USERNAME: ${{vars.DEB_PKG_BOT_CI_USERNAME}}
           CONFIRMATION_INPUT: ${{ inputs.confirmation }}
           DIRECT_PUSH_INPUT: ${{ inputs['direct-push'] }}
+          DIRECT_PUSH_REPOS_INPUT: ${{ inputs['direct-push-repos'] }}
         run: |
           # Define explicit list of repositories to exclude
           EXCLUDE_REPOS=("pkg-example" \
@@ -131,7 +140,33 @@ jobs:
             echo "ℹ️ direct-push=true ignored because confirmation=false. Running dry-run."
           fi
 
+          declare -A DIRECT_PUSH_REPO_FILTER=()
+          if [[ -n "$DIRECT_PUSH_REPOS_INPUT" ]]; then
+            IFS=',' read -ra direct_push_repo_candidates <<< "$DIRECT_PUSH_REPOS_INPUT"
+            for repo_name in "${direct_push_repo_candidates[@]}"; do
+              repo_name="$(echo "$repo_name" | xargs)"
+              [[ -z "$repo_name" ]] && continue
+              if [[ ! "$repo_name" =~ ^pkg- ]]; then
+                record_warning "ignoring non pkg-* repo selector '$repo_name'"
+                continue
+              fi
+              DIRECT_PUSH_REPO_FILTER["$repo_name"]=1
+            done
+          fi
+
           echo "ℹ️ Sync mode: $SYNC_MODE"
+          if [[ "$SYNC_MODE" == "direct-push" ]]; then
+            if [[ "${#DIRECT_PUSH_REPO_FILTER[@]}" -gt 0 ]]; then
+              echo "ℹ️ Direct-push repo filter enabled for:"
+              for repo_name in "${!DIRECT_PUSH_REPO_FILTER[@]}"; do
+                echo "  - $repo_name"
+              done | sort
+            else
+              echo "ℹ️ Direct-push repo filter is empty; all pkg repos are targeted."
+            fi
+          elif [[ "${#DIRECT_PUSH_REPO_FILTER[@]}" -gt 0 ]]; then
+            echo "ℹ️ direct-push-repos provided, but mode is $SYNC_MODE; list is ignored."
+          fi
 
           # Get the list of Qualcomm package repositories
           repos=$(gh repo list --limit 9999 $ORG --json name --jq '.[] | select(.name | startswith("pkg-")) | .name')
@@ -149,6 +184,11 @@ jobs:
             # Skip excluded repositories
             if [[ " ${EXCLUDE_REPOS[@]} " =~ " ${repo} " ]]; then
               echo "⏭️ Skipping excluded repository: $repo"
+              continue
+            fi
+
+            if [[ "$SYNC_MODE" == "direct-push" && "${#DIRECT_PUSH_REPO_FILTER[@]}" -gt 0 && -z "${DIRECT_PUSH_REPO_FILTER[$repo]+x}" ]]; then
+              echo "⏭️ Skipping non-selected repository in direct-push mode: $repo"
               continue
             fi
 

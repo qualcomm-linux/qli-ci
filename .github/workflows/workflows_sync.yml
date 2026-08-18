@@ -11,17 +11,47 @@ on:
         default: false
         required: true
         description: |
-          Tick to confirm creating pull requests to sync workflows from
-          qli-ci to the Qualcomm package repositories.
-          If not ticked, the workflow will not create any pull requests and will simply print the list of repositories that would have been synced.
+          Tick to confirm applying workflow sync changes from qli-ci to
+          Qualcomm package repositories.
+          If not ticked, the workflow runs in dry-run mode and only prints what
+          would have been changed.
+      direct-push:
+        type: boolean
+        default: false
+        required: false
+        description: |
+          Tick to bypass PR creation and push sync commits directly to target
+          branches.
+          Requires confirmation=true.
+      direct-push-repos:
+        type: string
+        required: false
+        default: ""
+        description: |
+          Comma-separated list of pkg repos to apply direct-push to
+          (for example: pkg-fastrpc,pkg-template).
+          Used only when direct-push=true. Leave empty to target all pkg repos.
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
-  sync:
+  approval-gate:
+    if: ${{ inputs.confirmation == true }}
     runs-on: ubuntu-latest
+    environment: workflow_sync_approval
+    steps:
+      - name: Await approval for mutating sync
+        run: |
+          echo "workflow_sync_approval approved; proceeding with sync."
+
+  sync:
+    needs: approval-gate
+    if: ${{ always() && (inputs.confirmation == false || needs.approval-gate.result == 'success') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
 
@@ -39,6 +69,8 @@ jobs:
           BOT_EMAIL: ${{vars.DEB_PKG_BOT_CI_EMAIL}}
           BOT_USERNAME: ${{vars.DEB_PKG_BOT_CI_USERNAME}}
           CONFIRMATION_INPUT: ${{ inputs.confirmation }}
+          DIRECT_PUSH_INPUT: ${{ inputs['direct-push'] }}
+          DIRECT_PUSH_REPOS_INPUT: ${{ inputs['direct-push-repos'] }}
         run: |
           # Define explicit list of repositories to exclude
           EXCLUDE_REPOS=("pkg-example" \
@@ -110,6 +142,45 @@ jobs:
             return 1
           }
 
+          SYNC_MODE="dry-run"
+          if [[ "$CONFIRMATION_INPUT" == "true" ]]; then
+            if [[ "$DIRECT_PUSH_INPUT" == "true" ]]; then
+              SYNC_MODE="direct-push"
+            else
+              SYNC_MODE="pr"
+            fi
+          elif [[ "$DIRECT_PUSH_INPUT" == "true" ]]; then
+            echo "ℹ️ direct-push=true ignored because confirmation=false. Running dry-run."
+          fi
+
+          declare -A DIRECT_PUSH_REPO_FILTER=()
+          if [[ -n "$DIRECT_PUSH_REPOS_INPUT" ]]; then
+            IFS=',' read -ra direct_push_repo_candidates <<< "$DIRECT_PUSH_REPOS_INPUT"
+            for repo_name in "${direct_push_repo_candidates[@]}"; do
+              repo_name="$(echo "$repo_name" | xargs)"
+              [[ -z "$repo_name" ]] && continue
+              if [[ ! "$repo_name" =~ ^pkg- ]]; then
+                record_warning "ignoring non pkg-* repo selector '$repo_name'"
+                continue
+              fi
+              DIRECT_PUSH_REPO_FILTER["$repo_name"]=1
+            done
+          fi
+
+          echo "ℹ️ Sync mode: $SYNC_MODE"
+          if [[ "$SYNC_MODE" == "direct-push" ]]; then
+            if [[ "${#DIRECT_PUSH_REPO_FILTER[@]}" -gt 0 ]]; then
+              echo "ℹ️ Direct-push repo filter enabled for:"
+              for repo_name in "${!DIRECT_PUSH_REPO_FILTER[@]}"; do
+                echo "  - $repo_name"
+              done | sort
+            else
+              echo "ℹ️ Direct-push repo filter is empty; all pkg repos are targeted."
+            fi
+          elif [[ "${#DIRECT_PUSH_REPO_FILTER[@]}" -gt 0 ]]; then
+            echo "ℹ️ direct-push-repos provided, but mode is $SYNC_MODE; list is ignored."
+          fi
+
           # Get the list of Qualcomm package repositories
           repos=$(gh repo list --limit 9999 $ORG --json name --jq '.[] | select(.name | startswith("pkg-")) | .name')
 
@@ -126,6 +197,11 @@ jobs:
             # Skip excluded repositories
             if [[ " ${EXCLUDE_REPOS[@]} " =~ " ${repo} " ]]; then
               echo "⏭️ Skipping excluded repository: $repo"
+              continue
+            fi
+
+            if [[ "$SYNC_MODE" == "direct-push" && "${#DIRECT_PUSH_REPO_FILTER[@]}" -gt 0 && -z "${DIRECT_PUSH_REPO_FILTER[$repo]+x}" ]]; then
+              echo "⏭️ Skipping non-selected repository in direct-push mode: $repo"
               continue
             fi
 
@@ -174,8 +250,8 @@ jobs:
             git config user.name "$BOT_NAME"
             git config user.email "$BOT_EMAIL"
 
-            # Delete the sync branch if it exists from a previous run
-            if git ls-remote --exit-code --heads origin sync/qli-ci-workflows > /dev/null 2>&1; then
+            # Delete the sync branch if it exists from a previous run (PR mode only)
+            if [[ "$SYNC_MODE" == "pr" ]] && git ls-remote --exit-code --heads origin sync/qli-ci-workflows > /dev/null 2>&1; then
               echo "    🧹 Deleting existing sync/qli-ci-workflows branch from remote"
               run_cmd git push origin --delete sync/qli-ci-workflows || record_warning "$repo:$default_branch failed to delete stale sync/qli-ci-workflows"
             fi
@@ -255,42 +331,52 @@ jobs:
               fi
             done
 
-              # Create branch, commit, and push default branch changes if needed
+              # Apply default-branch changes
               if [[ "$isDirty" == "true" ]]; then
-                echo "    📝 Creating branch and committing default branch changes"
-                if ! run_cmd git checkout -b sync/qli-ci-workflows; then
-                  record_warning "$repo:$default_branch failed to create sync branch"
-                  cd ..
-                  continue
-                fi
-                git add -A .github/
-                if ! run_cmd git commit -s -m "chore: sync workflows from qli-ci"; then
-                  record_warning "$repo:$default_branch failed to commit default-branch sync"
-                  cd ..
-                  continue
-                fi
-
-                if [[ "$CONFIRMATION_INPUT" == "true" ]]; then
-                  echo "    🚀 Pushing changes and creating PR for $default_branch"
-                  if run_cmd git push origin sync/qli-ci-workflows; then
-                    create_or_reuse_pr \
-                      "$repo" \
-                      "chore: sync workflows from qli-ci" \
-                      "This PR syncs the latest workflows from qli-ci." \
-                      "sync/qli-ci-workflows" \
-                      "$default_branch" || true
-                  else
-                    record_warning "$repo:$default_branch failed to push sync/qli-ci-workflows"
+                if [[ "$SYNC_MODE" == "direct-push" ]]; then
+                  echo "    🚀 Committing and pushing default-branch changes directly to $default_branch"
+                  git add -A .github/
+                  if ! run_cmd git commit -s -m "chore: sync workflows from qli-ci"; then
+                    record_warning "$repo:$default_branch failed to commit default-branch sync"
+                  elif ! run_cmd git push origin "$default_branch"; then
+                    record_warning "$repo:$default_branch failed to push direct sync commit"
                   fi
                 else
-                  echo "    👀 Dry-run mode - No PR will be created for $default_branch"
-                fi
+                  echo "    📝 Creating branch and committing default branch changes"
+                  if ! run_cmd git checkout -b sync/qli-ci-workflows; then
+                    record_warning "$repo:$default_branch failed to create sync branch"
+                    cd ..
+                    continue
+                  fi
+                  git add -A .github/
+                  if ! run_cmd git commit -s -m "chore: sync workflows from qli-ci"; then
+                    record_warning "$repo:$default_branch failed to commit default-branch sync"
+                    cd ..
+                    continue
+                  fi
 
-                # Return to default branch before packaging-branch sync
-                if ! run_cmd git checkout "$default_branch"; then
-                  record_warning "$repo:$default_branch failed to return to default branch"
-                  cd ..
-                  continue
+                  if [[ "$SYNC_MODE" == "pr" ]]; then
+                    echo "    🚀 Pushing changes and creating PR for $default_branch"
+                    if run_cmd git push origin sync/qli-ci-workflows; then
+                      create_or_reuse_pr \
+                        "$repo" \
+                        "chore: sync workflows from qli-ci" \
+                        "This PR syncs the latest workflows from qli-ci." \
+                        "sync/qli-ci-workflows" \
+                        "$default_branch" || true
+                    else
+                      record_warning "$repo:$default_branch failed to push sync/qli-ci-workflows"
+                    fi
+                  else
+                    echo "    👀 Dry-run mode - No PR will be created for $default_branch"
+                  fi
+
+                  # Return to default branch before packaging-branch sync
+                  if ! run_cmd git checkout "$default_branch"; then
+                    record_warning "$repo:$default_branch failed to return to default branch"
+                    cd ..
+                    continue
+                  fi
                 fi
               else
                 echo "    ✨ No default branch changes needed for $repo"
@@ -337,35 +423,45 @@ jobs:
                 fi
 
                 if [[ "$isCleanupDirty" == "true" ]]; then
-                  if git ls-remote --exit-code --heads origin "$cleanup_sync_branch" > /dev/null 2>&1; then
-                    echo "    🧹 Deleting existing $cleanup_sync_branch"
-                    run_cmd git push origin --delete "$cleanup_sync_branch" || record_warning "$repo:$other_branch failed deleting stale $cleanup_sync_branch"
-                  fi
-
-                  if ! run_cmd git checkout -b "$cleanup_sync_branch"; then
-                    record_warning "$repo:$other_branch failed creating $cleanup_sync_branch"
-                    continue
-                  fi
-                  git add -A .github/
-                  if ! run_cmd git commit -s -m "chore: remove pull_request_target workflows"; then
-                    record_warning "$repo:$other_branch failed committing cleanup changes"
-                    continue
-                  fi
-
-                  if [[ "$CONFIRMATION_INPUT" == "true" ]]; then
-                    echo "    🚀 Pushing changes and creating PR for $other_branch"
-                    if run_cmd git push origin "$cleanup_sync_branch"; then
-                      create_or_reuse_pr \
-                        "$repo" \
-                        "chore: remove pull_request_target workflows" \
-                        "This PR removes stale workflow files that still contain \`pull_request_target\`." \
-                        "$cleanup_sync_branch" \
-                        "$other_branch" || true
-                    else
-                      record_warning "$repo:$other_branch failed pushing $cleanup_sync_branch"
+                  if [[ "$SYNC_MODE" == "direct-push" ]]; then
+                    echo "    🚀 Committing and pushing cleanup changes directly to $other_branch"
+                    git add -A .github/
+                    if ! run_cmd git commit -s -m "chore: remove pull_request_target workflows"; then
+                      record_warning "$repo:$other_branch failed committing cleanup changes"
+                    elif ! run_cmd git push origin "$other_branch"; then
+                      record_warning "$repo:$other_branch failed pushing direct cleanup commit"
                     fi
                   else
-                    echo "    👀 Dry-run mode - No PR will be created for $other_branch"
+                    if [[ "$SYNC_MODE" == "pr" ]] && git ls-remote --exit-code --heads origin "$cleanup_sync_branch" > /dev/null 2>&1; then
+                      echo "    🧹 Deleting existing $cleanup_sync_branch"
+                      run_cmd git push origin --delete "$cleanup_sync_branch" || record_warning "$repo:$other_branch failed deleting stale $cleanup_sync_branch"
+                    fi
+
+                    if ! run_cmd git checkout -b "$cleanup_sync_branch"; then
+                      record_warning "$repo:$other_branch failed creating $cleanup_sync_branch"
+                      continue
+                    fi
+                    git add -A .github/
+                    if ! run_cmd git commit -s -m "chore: remove pull_request_target workflows"; then
+                      record_warning "$repo:$other_branch failed committing cleanup changes"
+                      continue
+                    fi
+
+                    if [[ "$SYNC_MODE" == "pr" ]]; then
+                      echo "    🚀 Pushing changes and creating PR for $other_branch"
+                      if run_cmd git push origin "$cleanup_sync_branch"; then
+                        create_or_reuse_pr \
+                          "$repo" \
+                          "chore: remove pull_request_target workflows" \
+                          "This PR removes stale workflow files that still contain \`pull_request_target\`." \
+                          "$cleanup_sync_branch" \
+                          "$other_branch" || true
+                      else
+                        record_warning "$repo:$other_branch failed pushing $cleanup_sync_branch"
+                      fi
+                    else
+                      echo "    👀 Dry-run mode - No PR will be created for $other_branch"
+                    fi
                   fi
                 else
                   echo "    ✨ No pull_request_target workflow cleanup needed on $other_branch"
@@ -397,8 +493,8 @@ jobs:
                 safe_branch_name="${packaging_branch//\//-}"
                 debian_sync_branch="sync/qli-ci-pkg-pr-hook-${safe_branch_name}"
 
-                # Delete existing sync branch if from a previous run
-                if git ls-remote --exit-code --heads origin "$debian_sync_branch" > /dev/null 2>&1; then
+                # Delete existing sync branch if from a previous run (PR mode only)
+                if [[ "$SYNC_MODE" == "pr" ]] && git ls-remote --exit-code --heads origin "$debian_sync_branch" > /dev/null 2>&1; then
                   echo "    🧹 Deleting existing $debian_sync_branch"
                   run_cmd git push origin --delete "$debian_sync_branch" || record_warning "$repo:$packaging_branch failed deleting stale $debian_sync_branch"
                 fi
@@ -451,30 +547,40 @@ jobs:
                 fi
 
                 if [[ "$isDebianDirty" == "true" ]]; then
-                  if ! run_cmd git checkout -b "$debian_sync_branch"; then
-                    record_warning "$repo:$packaging_branch failed creating $debian_sync_branch"
-                    continue
-                  fi
-                  git add -A .github/
-                  if ! run_cmd git commit -s -m "chore: sync pkg-pr-hook from qli-ci"; then
-                    record_warning "$repo:$packaging_branch failed committing pkg-pr-hook sync"
-                    continue
-                  fi
-
-                  if [[ "$CONFIRMATION_INPUT" == "true" ]]; then
-                    echo "    🚀 Pushing changes and creating PR for $packaging_branch"
-                    if run_cmd git push origin "$debian_sync_branch"; then
-                      create_or_reuse_pr \
-                        "$repo" \
-                        "chore: sync pkg-pr-hook from qli-ci" \
-                        "This PR syncs \`pkg-pr-hook.yml\` from qli-ci \`.github/pkg-workflows/debian/\`." \
-                        "$debian_sync_branch" \
-                        "$packaging_branch" || true
-                    else
-                      record_warning "$repo:$packaging_branch failed pushing $debian_sync_branch"
+                  if [[ "$SYNC_MODE" == "direct-push" ]]; then
+                    echo "    🚀 Committing and pushing pkg-pr-hook sync directly to $packaging_branch"
+                    git add -A .github/
+                    if ! run_cmd git commit -s -m "chore: sync pkg-pr-hook from qli-ci"; then
+                      record_warning "$repo:$packaging_branch failed committing pkg-pr-hook sync"
+                    elif ! run_cmd git push origin "$packaging_branch"; then
+                      record_warning "$repo:$packaging_branch failed pushing direct pkg-pr-hook sync commit"
                     fi
                   else
-                    echo "    👀 Dry-run mode - No PR will be created for $packaging_branch"
+                    if ! run_cmd git checkout -b "$debian_sync_branch"; then
+                      record_warning "$repo:$packaging_branch failed creating $debian_sync_branch"
+                      continue
+                    fi
+                    git add -A .github/
+                    if ! run_cmd git commit -s -m "chore: sync pkg-pr-hook from qli-ci"; then
+                      record_warning "$repo:$packaging_branch failed committing pkg-pr-hook sync"
+                      continue
+                    fi
+
+                    if [[ "$SYNC_MODE" == "pr" ]]; then
+                      echo "    🚀 Pushing changes and creating PR for $packaging_branch"
+                      if run_cmd git push origin "$debian_sync_branch"; then
+                        create_or_reuse_pr \
+                          "$repo" \
+                          "chore: sync pkg-pr-hook from qli-ci" \
+                          "This PR syncs \`pkg-pr-hook.yml\` from qli-ci \`.github/pkg-workflows/debian/\`." \
+                          "$debian_sync_branch" \
+                          "$packaging_branch" || true
+                      else
+                        record_warning "$repo:$packaging_branch failed pushing $debian_sync_branch"
+                      fi
+                    else
+                      echo "    👀 Dry-run mode - No PR will be created for $packaging_branch"
+                    fi
                   fi
                 fi
               done

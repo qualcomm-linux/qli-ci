@@ -15,6 +15,23 @@ ENABLE_UBUNTU_PATH_RAW="${ENABLE_UBUNTU_PATH:-1}"
 
 TAGS=("v1.0.0" "v1.1.0")
 
+CANCEL_SIGNALLED=0
+
+handle_cancel_signal() {
+  CANCEL_SIGNALLED=1
+  echo "Cancellation signal received; aborting pkg-example e2e step." >&2
+  exit 130
+}
+
+abort_if_cancelled() {
+  if [[ "$CANCEL_SIGNALLED" -eq 1 ]]; then
+    echo "Cancellation requested; stopping current operation." >&2
+    exit 130
+  fi
+}
+
+trap 'handle_cancel_signal' INT TERM
+
 write_output() {
   local key="$1"
   local value="$2"
@@ -256,6 +273,7 @@ wait_for_run_conclusion() {
 
   local run_json status conclusion url
   for _ in $(seq 1 "$max_attempts"); do
+    abort_if_cancelled
     run_json="$(gh_bot run view "$run_id" -R "$PKG_REPO" --json status,conclusion,url 2>/dev/null || true)"
     if [[ -n "$run_json" ]]; then
       status="$(jq -r '.status // empty' <<<"$run_json")"
@@ -284,6 +302,7 @@ wait_for_run_conclusion() {
       fi
     fi
 
+    abort_if_cancelled
     sleep "$sleep_seconds"
   done
 
@@ -315,10 +334,12 @@ dispatch_workflow_and_wait() {
 
   local found=0
   for _ in $(seq 1 80); do
+    abort_if_cancelled
     if find_dispatched_run "$workflow" "$branch" "workflow_dispatch" "$start_iso"; then
       found=1
       break
     fi
+    abort_if_cancelled
     sleep 3
   done
 
@@ -414,6 +435,7 @@ wait_for_pr_build() {
 
   local found=0
   for _ in $(seq 1 100); do
+    abort_if_cancelled
     local run_json
     run_json="$(gh_bot run list \
       -R "$PKG_REPO" \
@@ -431,6 +453,7 @@ wait_for_pr_build() {
       break
     fi
 
+    abort_if_cancelled
     sleep 5
   done
 
@@ -446,6 +469,7 @@ merge_promotion_pr() {
   local merge_output
 
   for _ in $(seq 1 12); do
+    abort_if_cancelled
     # If merge command itself succeeds, treat that as final success.
     if merge_output="$(gh_bot pr merge "$pr_number" -R "$PKG_REPO" --merge 2>&1)"; then
       return 0
@@ -460,6 +484,7 @@ merge_promotion_pr() {
     if [[ "$(gh_bot pr view "$pr_number" -R "$PKG_REPO" --json merged --jq '.merged' 2>/dev/null || echo "false")" == "true" ]]; then
       return 0
     fi
+    abort_if_cancelled
     sleep 10
   done
 
@@ -835,10 +860,12 @@ cmd_sync_pr_hook() {
 
   if [[ -z "$refreshed_sha" ]]; then
     for _ in $(seq 1 12); do
+      abort_if_cancelled
       refreshed_sha="$(gh_bot pr view "$pr_number" -R "$PKG_REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null || true)"
       if [[ -n "$refreshed_sha" ]]; then
         break
       fi
+      abort_if_cancelled
       sleep 2
     done
   fi

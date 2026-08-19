@@ -40,6 +40,22 @@ Run-level concurrency:
 
 This keeps only the latest loop run active when new commits are pushed.
 
+## Cancellation Semantics
+
+Cancellation behavior is part of the e2e contract:
+
+- workflow/job level:
+  - Ubuntu lane is guarded so it does not start when the overall run is in
+    cancelled state.
+- script/runtime level:
+  - `scripts/pkg_example_e2e_loop.sh` traps `SIGINT` and `SIGTERM`.
+  - long polling/retry loops check cancellation and exit immediately.
+
+Expected behavior:
+
+- manual cancel on the workflow run stops the current lane promptly.
+- concurrency preemption (new commit pushed) stops the older run promptly.
+
 ## Job Topology
 
 The workflow is intentionally split into two jobs for GitHub UI clarity:
@@ -205,10 +221,13 @@ When validating architecture vs implementation, verify:
 3. Loop phase order matches this document.
 4. Shared state artifact handoff still exists.
 5. E2E workflow still uses cancel-in-progress concurrency.
-6. PR-hook templates still define PR-level concurrency cancel-in-progress.
-7. PR-build wait still keys on PR head SHA and chooses latest run.
-8. Release wait still handles pending deployment approvals.
-9. `DEB_PKG_BOT_CI_TOKEN` remains a required contract.
-10. Post steps still run on `always()` for summary/comment/cleanup.
+6. Cancellation semantics still hold:
+   - Ubuntu lane does not schedule after cancellation.
+   - script trap/polling checks still exit promptly on cancel signals.
+7. PR-hook templates still define PR-level concurrency cancel-in-progress.
+8. PR-build wait still keys on PR head SHA and chooses latest run.
+9. Release wait still handles pending deployment approvals.
+10. `DEB_PKG_BOT_CI_TOKEN` remains a required contract.
+11. Post steps still run on `always()` for summary/comment/cleanup.
 
 If any item changes intentionally, update this document in the same PR.

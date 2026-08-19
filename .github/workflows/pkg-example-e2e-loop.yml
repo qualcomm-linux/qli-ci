@@ -206,7 +206,7 @@ jobs:
     name: pkg-example e2e (ubuntu lane)
     runs-on: ubuntu-latest
     needs: [debian-lane]
-    if: ${{ always() && vars.ENABLE_UBUNTU_PATH == '1' }}
+    if: ${{ !cancelled() && always() && vars.ENABLE_UBUNTU_PATH == '1' && contains(fromJson('["success","failure","skipped"]'), needs.debian-lane.result) }}
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-summary.md
       STATE_FILE: /tmp/pkg-example-e2e-state.json

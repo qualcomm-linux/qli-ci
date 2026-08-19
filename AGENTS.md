@@ -99,6 +99,8 @@ transient branch (for example `debian/pr/*`), routing can fall back to
   - prebuilt promotion flow
 - `.github/workflows/pkg-upstream-pr-build-reusable-workflow.yml`
   - validate upstream PRs against Debian packaging build
+- `.github/pkg-workflows/debusine/*`
+  - source Debusine stub workflows copied into managed `pkg-*` repos
 
 ## Important Debian/Debusine Helper Entrypoints
 

@@ -33,13 +33,43 @@ jobs:
   global-lock:
     name: pkg-example e2e (global slot)
     runs-on: ubuntu-latest
-    concurrency:
-      # Ensure only one pkg-example e2e run is active globally across all PRs.
-      group: pkg-example-e2e-loop-global
-      cancel-in-progress: false
     steps:
-      - name: Acquire global slot
-        run: echo "Acquired global pkg-example e2e slot"
+      - name: Wait for global slot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          WORKFLOW_FILE: pkg-example-e2e-loop.yml
+        run: |
+          set -euo pipefail
+
+          current_run="$(gh api "/repos/${REPO}/actions/runs/${RUN_ID}")"
+          current_created_at="$(jq -r '.created_at' <<<"${current_run}")"
+
+          echo "Current run: ${RUN_ID} (${current_created_at})"
+          echo "Waiting until no older pkg-example e2e run is still active..."
+
+          while true; do
+            runs_json="$(gh api "/repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=100")"
+
+            blockers="$(jq -c \
+              --argjson my_id "${RUN_ID}" \
+              --arg my_created_at "${current_created_at}" \
+              '[.workflow_runs[]
+                | select(.id != $my_id)
+                | select(.status != "completed")
+                | select((.created_at < $my_created_at) or (.created_at == $my_created_at and .id < $my_id))
+                | {id, status, head_branch, html_url}]' <<<"${runs_json}")"
+
+            if jq -e 'length == 0' >/dev/null <<<"${blockers}"; then
+              echo "Global slot acquired."
+              break
+            fi
+
+            echo "Blocking runs still active:"
+            jq -r '.[] | "- run \(.id) [\(.status)] on \(.head_branch): \(.html_url)"' <<<"${blockers}"
+            sleep 15
+          done
 
   debian-lane:
     name: pkg-example e2e (debian lane)

@@ -64,6 +64,7 @@ jobs:
       srcpkg_name: ${{ steps.select.outputs.srcpkg_name }}
       release_version: ${{ steps.select.outputs.release_version }}
       release_tag_name: ${{ steps.select.outputs.release_tag_name }}
+      source_commit_sha: ${{ steps.source-sha.outputs.sha }}
     defaults:
       run:
         shell: bash
@@ -161,6 +162,16 @@ jobs:
           ref: ${{ steps.resolve.outputs.normalized_ref }}
           fetch-depth: 0
           fetch-tags: true
+
+      # DEV SIMULATION (dev/check-run-test-ci): captures the pre-release
+      # commit SHA so the Coral test check run below has a stable head_sha
+      # to anchor to, before the changelog-release step mutates history.
+      - name: Resolve source commit SHA
+        id: source-sha
+        working-directory: ./package-repo
+        run: |
+          set -euxo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Prepare release source state
         id: prepare
@@ -394,10 +405,6 @@ jobs:
       - AXIOM_Check
     runs-on: lecore-prd-u2404-arm64-xlrg-od-ephem
     environment: pkg-release-approval
-    permissions:
-      contents: read
-      packages: read
-      checks: write
     defaults:
       run:
         shell: bash
@@ -419,34 +426,6 @@ jobs:
           set -euxo pipefail
           mkdir package-repo
           tar -C package-repo -xzf prepared-release-source.tar.gz --strip-components=1 --no-same-owner
-
-      - name: Resolve release commit SHA
-        id: release-sha
-        working-directory: ./package-repo
-        run: |
-          set -euxo pipefail
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      # DEV SIMULATION (dev/check-run-test-ci): starts a check run on the
-      # commit being released so we can confirm Coral reacts to a check_run
-      # event fired this way. Not part of the real release pipeline.
-      - name: Start release check run (simulation)
-        id: start-check
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euxo pipefail
-          check_run_id=$(gh api \
-            --method POST \
-            "repos/${{ github.repository }}/check-runs" \
-            -f name="qli-ci/release-check-run-test" \
-            -f head_sha="${{ steps.release-sha.outputs.sha }}" \
-            -f status="in_progress" \
-            -f details_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            -f "output[title]=qli-ci/release-check-run-test" \
-            -f "output[summary]=Simulated release check run in progress" \
-            --jq '.id')
-          echo "id=${check_run_id}" >> "$GITHUB_OUTPUT"
 
       - name: Configure git identity
         working-directory: ./package-repo
@@ -611,29 +590,6 @@ jobs:
           fi
 
           git push --atomic origin "HEAD:${DEBIAN_BRANCH}" "${tag_name}"
-
-      # DEV SIMULATION (dev/check-run-test-ci): completes the check run
-      # started above. always() so a failed release still reports back
-      # (helps confirm Coral reacts to both outcomes during testing).
-      - name: Finish release check run (simulation)
-        if: ${{ always() && steps.start-check.outputs.id != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euxo pipefail
-          conclusion="success"
-          if [[ "${{ job.status }}" != "success" ]]; then
-            conclusion="failure"
-          fi
-          gh api \
-            --method PATCH \
-            "repos/${{ github.repository }}/check-runs/${{ steps.start-check.outputs.id }}" \
-            -f status="completed" \
-            -f conclusion="${conclusion}" \
-            -f details_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            -f "output[title]=qli-ci/release-check-run-test" \
-            -f "output[summary]=Simulated release check run ${conclusion}" \
-            >/dev/null
 
   persistance:
     name: Release Metadata Persistence
@@ -873,3 +829,93 @@ jobs:
           s3_bucket: qli-prd-lecore-gh-artifacts
           path: s3-proposed
           destination: qualcomm-linux/pkg/proposed/${{ github.run_id }}-${{ github.run_attempt }}/
+
+  # DEV SIMULATION (dev/check-run-test-ci): stages the built debs to S3,
+  # then starts and immediately completes a check run on the pre-release
+  # commit SHA. Runs right after build-and-test succeeds -- no
+  # environment gate, so it fires before the pkg-release-approval
+  # reviewers are asked to approve ubuntu-release. Independent of
+  # AXIOM_ENABLE. Not part of the real release pipeline.
+  check-run-test:
+    name: "Check run test (S3 upload -> check run)"
+    if: ${{ needs.build-and-test.outputs.family == 'ubuntu' }}
+    needs:
+      - prepare-release-source
+      - build-and-test
+    runs-on: lecore-prd-u2404-arm64-xlrg-od-ephem
+    permissions:
+      contents: read
+      checks: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Download Docker build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: docker-build-area
+          path: .
+
+      - name: Extract Docker build artifacts
+        run: |
+          set -euxo pipefail
+          mkdir -p build-area
+          tar -C build-area -xzf docker-build-area.tgz
+
+      - name: Stage debs for S3 upload
+        run: |
+          set -euxo pipefail
+          mkdir -p s3-check-run-test
+          mapfile -t debs < <(find build-area -maxdepth 1 -name "*.deb" -printf '%f\n' | sort)
+          if [ "${#debs[@]}" -eq 0 ]; then
+            echo "No .deb files found in build-area; skipping debs.tar.gz creation"
+          else
+            tar -czf s3-check-run-test/debs.tar.gz -C build-area "${debs[@]}"
+          fi
+
+      - name: Upload debs to S3
+        id: upload
+        uses: qualcomm-linux/upload-private-artifact-action@aws-v4
+        with:
+          s3_bucket: qli-prd-lecore-gh-artifacts
+          path: s3-check-run-test
+          destination: qualcomm-linux/pkg/dev-check-run-test/${{ github.run_id }}-${{ github.run_attempt }}/
+
+      - name: Start release check run (simulation)
+        id: start-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ needs.prepare-release-source.outputs.source_commit_sha }}
+        run: |
+          set -euxo pipefail
+          check_run_id=$(gh api \
+            --method POST \
+            "repos/${{ github.repository }}/check-runs" \
+            -f name="qli-ci/release-check-run-test" \
+            -f head_sha="${COMMIT_SHA}" \
+            -f status="in_progress" \
+            -f details_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f "output[title]=qli-ci/release-check-run-test" \
+            -f "output[summary]=Debs uploaded to S3 (dev-check-run-test), simulated check run in progress" \
+            --jq '.id')
+          echo "id=${check_run_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Finish release check run (simulation)
+        if: ${{ always() && steps.start-check.outputs.id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          conclusion="success"
+          if [[ "${{ steps.upload.outcome }}" != "success" ]]; then
+            conclusion="failure"
+          fi
+          gh api \
+            --method PATCH \
+            "repos/${{ github.repository }}/check-runs/${{ steps.start-check.outputs.id }}" \
+            -f status="completed" \
+            -f conclusion="${conclusion}" \
+            -f details_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f "output[title]=qli-ci/release-check-run-test" \
+            -f "output[summary]=Simulated release check run ${conclusion}" \
+            >/dev/null

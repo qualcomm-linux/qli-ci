@@ -879,7 +879,7 @@ jobs:
         with:
           s3_bucket: qli-prd-lecore-gh-artifacts
           path: s3-check-run-test
-          destination: qualcomm-linux/pkg/dev-check-run-test/${{ github.run_id }}-${{ github.run_attempt }}/
+          destination: qualcomm-linux/pkg/proposed/${{ github.run_id }}-${{ github.run_attempt }}/
 
       - name: Install jq
         run: |

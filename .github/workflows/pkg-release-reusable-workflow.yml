@@ -394,6 +394,10 @@ jobs:
       - AXIOM_Check
     runs-on: lecore-prd-u2404-arm64-xlrg-od-ephem
     environment: pkg-release-approval
+    permissions:
+      contents: read
+      packages: read
+      checks: write
     defaults:
       run:
         shell: bash
@@ -415,6 +419,34 @@ jobs:
           set -euxo pipefail
           mkdir package-repo
           tar -C package-repo -xzf prepared-release-source.tar.gz --strip-components=1 --no-same-owner
+
+      - name: Resolve release commit SHA
+        id: release-sha
+        working-directory: ./package-repo
+        run: |
+          set -euxo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # DEV SIMULATION (dev/check-run-test-ci): starts a check run on the
+      # commit being released so we can confirm Coral reacts to a check_run
+      # event fired this way. Not part of the real release pipeline.
+      - name: Start release check run (simulation)
+        id: start-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          check_run_id=$(gh api \
+            --method POST \
+            "repos/${{ github.repository }}/check-runs" \
+            -f name="qli-ci/release-check-run-test" \
+            -f head_sha="${{ steps.release-sha.outputs.sha }}" \
+            -f status="in_progress" \
+            -f details_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f "output[title]=qli-ci/release-check-run-test" \
+            -f "output[summary]=Simulated release check run in progress" \
+            --jq '.id')
+          echo "id=${check_run_id}" >> "$GITHUB_OUTPUT"
 
       - name: Configure git identity
         working-directory: ./package-repo
@@ -579,6 +611,29 @@ jobs:
           fi
 
           git push --atomic origin "HEAD:${DEBIAN_BRANCH}" "${tag_name}"
+
+      # DEV SIMULATION (dev/check-run-test-ci): completes the check run
+      # started above. always() so a failed release still reports back
+      # (helps confirm Coral reacts to both outcomes during testing).
+      - name: Finish release check run (simulation)
+        if: ${{ always() && steps.start-check.outputs.id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          conclusion="success"
+          if [[ "${{ job.status }}" != "success" ]]; then
+            conclusion="failure"
+          fi
+          gh api \
+            --method PATCH \
+            "repos/${{ github.repository }}/check-runs/${{ steps.start-check.outputs.id }}" \
+            -f status="completed" \
+            -f conclusion="${conclusion}" \
+            -f details_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f "output[title]=qli-ci/release-check-run-test" \
+            -f "output[summary]=Simulated release check run ${conclusion}" \
+            >/dev/null
 
   persistance:
     name: Release Metadata Persistence

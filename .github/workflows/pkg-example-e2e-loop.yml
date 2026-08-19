@@ -22,15 +22,28 @@ on:
         default: ""
 
 concurrency:
-  group: pkg-example-e2e-loop-global
+  # Preempt stale runs only within the same PR/ref.
+  group: pkg-example-e2e-loop-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  global-lock:
+    name: pkg-example e2e (global slot)
+    runs-on: ubuntu-latest
+    concurrency:
+      # Ensure only one pkg-example e2e run is active globally across all PRs.
+      group: pkg-example-e2e-loop-global
+      cancel-in-progress: false
+    steps:
+      - name: Acquire global slot
+        run: echo "Acquired global pkg-example e2e slot"
+
   debian-lane:
     name: pkg-example e2e (debian lane)
+    needs: [global-lock]
     if: ${{ vars.ENABLE_DEBIAN_PATH == '1' }}
     runs-on: ubuntu-latest
     env:
@@ -205,8 +218,8 @@ jobs:
   ubuntu-lane:
     name: pkg-example e2e (ubuntu lane)
     runs-on: ubuntu-latest
-    needs: [debian-lane]
-    if: ${{ !cancelled() && always() && vars.ENABLE_UBUNTU_PATH == '1' && contains(fromJson('["success","failure","skipped"]'), needs.debian-lane.result) }}
+    needs: [global-lock, debian-lane]
+    if: ${{ !cancelled() && always() && vars.ENABLE_UBUNTU_PATH == '1' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.debian-lane.result) }}
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-summary.md
       STATE_FILE: /tmp/pkg-example-e2e-state.json

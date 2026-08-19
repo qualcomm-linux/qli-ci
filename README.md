@@ -29,3 +29,7 @@ that were historically maintained in `qcom-build-utils`.
   `qualcomm-linux/debusine-action`; this repo owns package-facing orchestration
   and workflow templates.
 - See `AGENTS.md` for detailed operational guidance and workflow contracts.
+
+## License
+
+This repository is licensed under the terms in `LICENSE.txt`.

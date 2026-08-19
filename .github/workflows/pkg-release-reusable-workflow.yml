@@ -894,9 +894,11 @@ jobs:
           COMMIT_SHA: ${{ needs.prepare-release-source.outputs.source_commit_sha }}
         run: |
           set -euxo pipefail
+          s3_location="qualcomm-linux/pkg/proposed/${{ github.run_id }}-${{ github.run_attempt }}"
           payload=$(jq -n \
             --arg head_sha "${COMMIT_SHA}" \
             --arg details_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg s3_location "${s3_location}" \
             '{
               name: "qli-ci/release-check-run-test",
               head_sha: $head_sha,
@@ -904,7 +906,8 @@ jobs:
               details_url: $details_url,
               output: {
                 title: "qli-ci/release-check-run-test",
-                summary: "Debs uploaded to S3 (dev-check-run-test), simulated check run in progress"
+                summary: "Debs uploaded to S3, simulated check run in progress",
+                text: $s3_location
               }
             }')
           response=$(curl -sS -w '\n%{http_code}' \
@@ -933,16 +936,19 @@ jobs:
           if [[ "${{ steps.upload.outcome }}" != "success" ]]; then
             conclusion="failure"
           fi
+          s3_location="qualcomm-linux/pkg/proposed/${{ github.run_id }}-${{ github.run_attempt }}"
           payload=$(jq -n \
             --arg conclusion "${conclusion}" \
             --arg details_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg s3_location "${s3_location}" \
             '{
               status: "completed",
               conclusion: $conclusion,
               details_url: $details_url,
               output: {
                 title: "qli-ci/release-check-run-test",
-                summary: ("Simulated release check run " + $conclusion)
+                summary: ("Simulated release check run " + $conclusion),
+                text: $s3_location
               }
             }')
           response=$(curl -sS -w '\n%{http_code}' \

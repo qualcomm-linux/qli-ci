@@ -24,6 +24,7 @@ jobs:
       debian-branch: ${{ github.event.inputs.debian-branch }}
       test-run: ${{ vars.IS_TEST_PKG == 'true' }}
       debusine-parent-workspace: ${{ vars.DEBUSINE_PARENT_WORKSPACE }}
+      debusine-target-workspace: ${{ vars.DEBUSINE_TARGET_WORKSPACE || (vars.IS_TEST_PKG == 'true' && 'qli-staging' || 'prod') }}
     secrets:
       PAT: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
       DEBUSINE_USER: ${{ secrets.DEBUSINE_USER }}

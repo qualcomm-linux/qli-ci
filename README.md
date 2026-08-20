@@ -28,6 +28,8 @@ that were historically maintained in `qcom-build-utils`.
 - Debusine implementation logic remains in
   `qualcomm-linux/debusine-action`; this repo owns package-facing orchestration
   and workflow templates.
+- Pull requests should run the `pkg-example e2e loop` workflow to validate
+  end-to-end package CI behavior before merge.
 - See `AGENTS.md` for detailed operational guidance and workflow contracts.
 
 ## License

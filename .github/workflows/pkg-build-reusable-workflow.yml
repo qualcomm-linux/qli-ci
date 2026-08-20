@@ -302,6 +302,7 @@ jobs:
         if: ${{ inputs.release }}
         env:
           SUITE_INPUT: ${{ needs.resolve.outputs.suite }}
+          DEBUSINE_TARGET_WORKSPACE: prod
         run: |
           set -ex
           echo "::group::Prepare release"

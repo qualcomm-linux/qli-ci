@@ -296,6 +296,7 @@ jobs:
       run-lintian: true
       release: true
       debusine-parent-workspace: ${{ inputs.debusine-parent-workspace }}
+      debusine-target-workspace: ${{ vars.DEBUSINE_TARGET_WORKSPACE || (inputs.test-run && 'qli-staging' || 'prod') }}
     secrets:
       DEBUSINE_USER: ${{ secrets.DEBUSINE_USER }}
       DEBUSINE_TOKEN: ${{ secrets.DEBUSINE_TOKEN }}
@@ -370,7 +371,7 @@ jobs:
           DEBUSINE_SCOPE: ${{ vars.DEBUSINE_SCOPE }}
           DEBUSINE_TOKEN: ${{ secrets.DEBUSINE_RELEASE_TOKEN }}
           DEBUSINE_CI_WORKSPACE: ${{ needs.build-and-test.outputs.workspace }}
-          DEBUSINE_TARGET_WORKSPACE: prod
+          DEBUSINE_TARGET_WORKSPACE: ${{ vars.DEBUSINE_TARGET_WORKSPACE || 'prod' }}
           SRCPKG_NAME: ${{ needs.build-and-test.outputs.srcpkg_name }}
           SRCPKG_VERSION: ${{ needs.build-and-test.outputs.srcpkg_version }}
           SUITE: ${{ needs.build-and-test.outputs.suite }}

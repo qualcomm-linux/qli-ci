@@ -46,6 +46,11 @@ on:
         description: Parent Debusine workspace used to create per-run child CI workspaces for Debian builds
         type: string
 
+      debusine-target-workspace:
+        description: Debusine target workspace name used by release-preparation tagging (for example qli-staging or prod)
+        type: string
+        default: prod
+
       force-docker-build:
         description: |
           When the resolved family is Debian, force the local sbuild pkg-builder path instead of Debusine.
@@ -302,7 +307,7 @@ jobs:
         if: ${{ inputs.release }}
         env:
           SUITE_INPUT: ${{ needs.resolve.outputs.suite }}
-          DEBUSINE_TARGET_WORKSPACE: prod
+          DEBUSINE_TARGET_WORKSPACE: ${{ inputs.debusine-target-workspace }}
         run: |
           set -ex
           echo "::group::Prepare release"

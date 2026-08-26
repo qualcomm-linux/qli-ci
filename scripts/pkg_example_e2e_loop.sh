@@ -220,10 +220,42 @@ prebuilt_debian_version_for_tag() {
   echo "${normalized}-1"
 }
 
+resolve_prebuilt_fixture_compiler() {
+  local host_arch
+  host_arch="$(uname -m)"
+
+  if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+    echo "aarch64-linux-gnu-gcc"
+    return 0
+  fi
+
+  if [[ "$host_arch" == "aarch64" || "$host_arch" == "arm64" ]]; then
+    if command -v gcc >/dev/null 2>&1; then
+      echo "gcc"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 create_prebuilt_fixture_archive() {
   local repo_dir="$1"
   local tag="$2"
-  local package_name archive_dir staging_dir
+  local package_name archive_dir staging_dir compiler lib_path lib_info
+
+  compiler="${PREBUILT_FIXTURE_CC:-}"
+  if [[ -z "$compiler" ]]; then
+    if ! compiler="$(resolve_prebuilt_fixture_compiler)"; then
+      echo "No arm64-capable compiler found for prebuilt fixture generation" >&2
+      return 1
+    fi
+  fi
+
+  if ! command -v "$compiler" >/dev/null 2>&1; then
+    echo "Configured prebuilt fixture compiler not found: $compiler" >&2
+    return 1
+  fi
 
   package_name="$(prebuilt_package_name_for_tag "$tag")"
   archive_dir="${repo_dir}/${PREBUILT_FIXTURE_ROOT}/${tag}/${PREBUILT_DISTRO}"
@@ -247,9 +279,20 @@ int qcom_example2(void);
 #endif
 EOF
 
-  gcc -shared -fPIC -Wl,-soname,libqcom-example.so.1 \
-    -o "${staging_dir}/usr/lib/libqcom-example.so.1.0.0" \
+  lib_path="${staging_dir}/usr/lib/libqcom-example.so.1.0.0"
+
+  "$compiler" -shared -fPIC -Wl,-soname,libqcom-example.so.1 \
+    -o "$lib_path" \
     "${staging_dir}/qcom_example.c"
+
+  if command -v file >/dev/null 2>&1; then
+    lib_info="$(file -b "$lib_path")"
+    if [[ "$lib_info" != *"ARM aarch64"* ]]; then
+      echo "Generated prebuilt fixture is not arm64: ${lib_info}" >&2
+      return 1
+    fi
+  fi
+
   ln -sf "libqcom-example.so.1.0.0" "${staging_dir}/usr/lib/libqcom-example.so.1"
   ln -sf "libqcom-example.so.1" "${staging_dir}/usr/lib/libqcom-example.so"
 
@@ -826,8 +869,13 @@ cmd_seed_prebuilt_fixtures() {
     return 1
   fi
 
-  require_cmd gcc
   require_cmd tar
+
+  local prebuilt_fixture_cc
+  if ! prebuilt_fixture_cc="$(resolve_prebuilt_fixture_compiler)"; then
+    mark_overall_failure "Missing arm64 compiler for prebuilt fixture generation (need aarch64-linux-gnu-gcc, or run on arm64 with gcc)"
+    return 1
+  fi
 
   local lane_branch_value repo_dir temp_branch initial_tag initial_package
   lane_branch_value="$(lane_branch "$lane")"
@@ -849,7 +897,7 @@ cmd_seed_prebuilt_fixtures() {
 
     rm -rf "$PREBUILT_FIXTURE_ROOT"
     for tag in "${PREBUILT_TAGS[@]}"; do
-      create_prebuilt_fixture_archive "$repo_dir" "$tag"
+      PREBUILT_FIXTURE_CC="$prebuilt_fixture_cc" create_prebuilt_fixture_archive "$repo_dir" "$tag"
     done
 
     cat > upstream.conf <<EOF

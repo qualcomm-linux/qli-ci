@@ -134,6 +134,14 @@ jobs:
           set -euo pipefail
           ./scripts/pkg_example_e2e_loop.sh seed-ubuntu
 
+      - name: Install arm64 cross compiler (prebuilt fixtures)
+        run: |
+          set -euo pipefail
+          if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes gcc-aarch64-linux-gnu
+          fi
+
       - name: Prebuilt seed fixture artifacts
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}

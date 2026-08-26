@@ -86,7 +86,7 @@ State handoff:
 
 Job-level toggles come from repo variables:
 
-- `ENABLE_PREBUILT_PATH` (`1` or `0`)
+- `ENABLE_PREBUILT_PATH` (`1` or `0`; defaults to enabled when unset)
 - `ENABLE_DEBIAN_PATH` (`1` or `0`)
 - `ENABLE_UBUNTU_PATH` (`1` or `0`)
 

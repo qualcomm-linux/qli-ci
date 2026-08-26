@@ -44,7 +44,7 @@ jobs:
   prebuilt-promote-lane:
     name: pkg-example e2e (prebuilt promote lane)
     needs: [global-lock]
-    if: ${{ vars.ENABLE_PREBUILT_PATH == '1' }}
+    if: ${{ vars.ENABLE_PREBUILT_PATH != '0' }}
     runs-on: ubuntu-latest
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-prebuilt-summary.md

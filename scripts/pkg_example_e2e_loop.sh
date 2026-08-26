@@ -12,8 +12,12 @@ IS_FORK_PR="${IS_FORK_PR:-false}"
 BOT_TOKEN="${BOT_TOKEN:-}"
 ENABLE_DEBIAN_PATH_RAW="${ENABLE_DEBIAN_PATH:-1}"
 ENABLE_UBUNTU_PATH_RAW="${ENABLE_UBUNTU_PATH:-1}"
+PROMOTE_MODE="${PROMOTE_MODE:-source}"
 
 TAGS=("v1.0.0" "v1.1.0")
+PREBUILT_TAGS=("v1.0.0")
+PREBUILT_DISTRO="resolute"
+PREBUILT_FIXTURE_ROOT=".e2e-prebuilt-fixtures"
 
 CANCEL_SIGNALLED=0
 
@@ -202,6 +206,98 @@ lane_branch() {
       return 1
       ;;
   esac
+}
+
+prebuilt_package_name_for_tag() {
+  local tag="$1"
+  local normalized="${tag#v}"
+  echo "libqcom-example_${normalized}_arm64.tar.gz"
+}
+
+prebuilt_debian_version_for_tag() {
+  local tag="$1"
+  local normalized="${tag#v}"
+  echo "${normalized}-1"
+}
+
+resolve_prebuilt_fixture_compiler() {
+  local host_arch
+  host_arch="$(uname -m)"
+
+  if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+    echo "aarch64-linux-gnu-gcc"
+    return 0
+  fi
+
+  if [[ "$host_arch" == "aarch64" || "$host_arch" == "arm64" ]]; then
+    if command -v gcc >/dev/null 2>&1; then
+      echo "gcc"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+create_prebuilt_fixture_archive() {
+  local repo_dir="$1"
+  local tag="$2"
+  local package_name archive_dir staging_dir compiler lib_path lib_info
+
+  compiler="${PREBUILT_FIXTURE_CC:-}"
+  if [[ -z "$compiler" ]]; then
+    if ! compiler="$(resolve_prebuilt_fixture_compiler)"; then
+      echo "No arm64-capable compiler found for prebuilt fixture generation" >&2
+      return 1
+    fi
+  fi
+
+  if ! command -v "$compiler" >/dev/null 2>&1; then
+    echo "Configured prebuilt fixture compiler not found: $compiler" >&2
+    return 1
+  fi
+
+  package_name="$(prebuilt_package_name_for_tag "$tag")"
+  archive_dir="${repo_dir}/${PREBUILT_FIXTURE_ROOT}/${tag}/${PREBUILT_DISTRO}"
+  mkdir -p "$archive_dir"
+
+  staging_dir="$(mktemp -d)"
+  mkdir -p "${staging_dir}/usr/lib" "${staging_dir}/usr/include/qcom"
+
+  cat > "${staging_dir}/qcom_example.c" <<'EOF'
+int qcom_example(void) { return 1; }
+int qcom_example2(void) { return 2; }
+EOF
+
+  cat > "${staging_dir}/usr/include/qcom/qcom_example.h" <<'EOF'
+#ifndef QCOM_EXAMPLE_H
+#define QCOM_EXAMPLE_H
+
+int qcom_example(void);
+int qcom_example2(void);
+
+#endif
+EOF
+
+  lib_path="${staging_dir}/usr/lib/libqcom-example.so.1.0.0"
+
+  "$compiler" -shared -fPIC -Wl,-soname,libqcom-example.so.1 \
+    -o "$lib_path" \
+    "${staging_dir}/qcom_example.c"
+
+  if command -v file >/dev/null 2>&1; then
+    lib_info="$(file -b "$lib_path")"
+    if [[ "$lib_info" != *"ARM aarch64"* ]]; then
+      echo "Generated prebuilt fixture is not arm64: ${lib_info}" >&2
+      return 1
+    fi
+  fi
+
+  ln -sf "libqcom-example.so.1.0.0" "${staging_dir}/usr/lib/libqcom-example.so.1"
+  ln -sf "libqcom-example.so.1" "${staging_dir}/usr/lib/libqcom-example.so"
+
+  tar -C "$staging_dir" -czf "${archive_dir}/${package_name}" usr
+  rm -rf "$staging_dir"
 }
 
 status_emoji() {
@@ -520,6 +616,7 @@ cmd_init() {
     --arg qli_ref "$QLI_CI_REF" \
     --arg qli_pr "$QLI_CI_PR_NUMBER" \
     --arg temp_branch "$temp_branch" \
+    --arg promote_mode "$PROMOTE_MODE" \
     --arg summary "$SUMMARY_FILE" \
     --arg skip "$IS_FORK_PR" \
     --argjson enable_debian "$enable_debian" \
@@ -529,6 +626,7 @@ cmd_init() {
         qli_ci_ref: $qli_ref,
         qli_ci_pr_number: $qli_pr,
         temp_branch: $temp_branch,
+        promote_mode: $promote_mode,
         summary_file: $summary,
         skip: ($skip == "true"),
         enable_debian: $enable_debian,
@@ -746,10 +844,92 @@ cmd_seed_ubuntu() {
   return 1
 }
 
+cmd_seed_prebuilt_fixtures() {
+  ensure_state
+  local lane="${1:-ubuntu}"
+
+  if [[ "$(state_get '.meta.skip')" == "true" ]]; then
+    return 0
+  fi
+
+  if [[ "$(lane_is_enabled "$lane")" != "true" ]]; then
+    return 0
+  fi
+
+  if [[ "$(get_lane_phase_status "$lane" "reset")" != "success" ]]; then
+    return 0
+  fi
+
+  if [[ "$lane" == "ubuntu" && "$(get_lane_phase_status "ubuntu" "seed")" != "success" ]]; then
+    return 0
+  fi
+
+  if [[ -z "$BOT_TOKEN" ]]; then
+    mark_overall_failure "BOT_TOKEN is required to seed prebuilt fixtures"
+    return 1
+  fi
+
+  require_cmd tar
+
+  local prebuilt_fixture_cc
+  if ! prebuilt_fixture_cc="$(resolve_prebuilt_fixture_compiler)"; then
+    mark_overall_failure "Missing arm64 compiler for prebuilt fixture generation (need aarch64-linux-gnu-gcc, or run on arm64 with gcc)"
+    return 1
+  fi
+
+  local lane_branch_value repo_dir temp_branch initial_tag initial_package
+  lane_branch_value="$(lane_branch "$lane")"
+  repo_dir="$(state_get '.meta.repo_dir')"
+  temp_branch="$(state_get '.meta.temp_branch')"
+  initial_tag="bootstrap"
+  initial_package="$(prebuilt_package_name_for_tag "${PREBUILT_TAGS[0]}")"
+
+  if [[ -z "$repo_dir" || ! -d "$repo_dir" ]]; then
+    mark_overall_failure "Missing local repo clone during prebuilt fixture seed"
+    return 1
+  fi
+
+  (
+    cd "$repo_dir"
+    git remote set-url origin "https://x-access-token:${BOT_TOKEN}@github.com/${PKG_REPO}.git"
+    git fetch origin "$lane_branch_value" >/dev/null 2>&1
+    git checkout -B "$lane_branch_value" "origin/$lane_branch_value" >/dev/null 2>&1
+
+    rm -rf "$PREBUILT_FIXTURE_ROOT"
+    for tag in "${PREBUILT_TAGS[@]}"; do
+      PREBUILT_FIXTURE_CC="$prebuilt_fixture_cc" create_prebuilt_fixture_archive "$repo_dir" "$tag"
+    done
+
+    cat > upstream.conf <<EOF
+export ARTIFACTORY="file://\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/${PREBUILT_FIXTURE_ROOT}"
+export TAG="${initial_tag}"
+export DISTRO="${PREBUILT_DISTRO}"
+export PACKAGE_NAME="${initial_package}"
+EOF
+
+    git add upstream.conf "$PREBUILT_FIXTURE_ROOT"
+    if ! git diff --cached --quiet; then
+      git commit -s -m "ci: seed local prebuilt fixtures for e2e loop" >/dev/null 2>&1 || true
+      git push origin "HEAD:refs/heads/${lane_branch_value}" >/dev/null 2>&1
+    fi
+
+    git checkout "$temp_branch" >/dev/null 2>&1
+  )
+  rc=$?
+
+  if [[ "$rc" -ne 0 ]]; then
+    mark_overall_failure "Failed prebuilt fixture seed for lane ${lane}"
+    return 1
+  fi
+
+  return 0
+}
+
 cmd_promote_tag() {
   ensure_state
   local lane="$1"
   local tag="$2"
+  local mode="${3:-$PROMOTE_MODE}"
 
   if [[ "$(state_get '.meta.skip')" == "true" ]]; then
     set_tag_phase "$lane" "$tag" "promote" "skipped" ""
@@ -775,9 +955,25 @@ cmd_promote_tag() {
   lane_branch="$(lane_branch "$lane")"
   promote_start="$(iso_now)"
 
-  if ! dispatch_workflow_and_wait .github/workflows/pkg-promote.yml "$(state_get '.meta.temp_branch')" -f debian-branch="$lane_branch" -f upstream-tag="$tag"; then
-    set_tag_phase "$lane" "$tag" "promote" "failure" "$LAST_RUN_URL"
-    mark_overall_failure "Promote failed for ${lane} ${tag}"
+  if [[ "$mode" == "prebuilt" ]]; then
+    local new_package_name new_debian_version
+    new_package_name="$(prebuilt_package_name_for_tag "$tag")"
+    new_debian_version="$(prebuilt_debian_version_for_tag "$tag")"
+
+    if ! dispatch_workflow_and_wait .github/workflows/pkg-promote-prebuilt.yml "$(state_get '.meta.temp_branch')" -f debian-branch="$lane_branch" -f new-tag="$tag" -f new-package-name="$new_package_name" -f new-debian-version="$new_debian_version"; then
+      set_tag_phase "$lane" "$tag" "promote" "failure" "$LAST_RUN_URL"
+      mark_overall_failure "Promote (${mode}) failed for ${lane} ${tag}"
+      return 1
+    fi
+  elif [[ "$mode" == "source" ]]; then
+    if ! dispatch_workflow_and_wait .github/workflows/pkg-promote.yml "$(state_get '.meta.temp_branch')" -f debian-branch="$lane_branch" -f upstream-tag="$tag"; then
+      set_tag_phase "$lane" "$tag" "promote" "failure" "$LAST_RUN_URL"
+      mark_overall_failure "Promote (${mode}) failed for ${lane} ${tag}"
+      return 1
+    fi
+  else
+    set_tag_phase "$lane" "$tag" "promote" "failure" ""
+    mark_overall_failure "Unsupported promote mode '${mode}'"
     return 1
   fi
 
@@ -1086,11 +1282,12 @@ cmd_write_summary() {
     overall_status="success"
   fi
 
-  local qli_ci_ref qli_ci_pr_number temp_branch note
+  local qli_ci_ref qli_ci_pr_number temp_branch note promote_mode
   local enable_debian enable_ubuntu
   qli_ci_ref="$(state_get '.meta.qli_ci_ref')"
   qli_ci_pr_number="$(state_get '.meta.qli_ci_pr_number')"
   temp_branch="$(state_get '.meta.temp_branch')"
+  promote_mode="$(state_get '.meta.promote_mode')"
   note="$(state_get '.meta.note')"
   enable_debian="$(state_get '.meta.enable_debian')"
   enable_ubuntu="$(state_get '.meta.enable_ubuntu')"
@@ -1103,6 +1300,7 @@ cmd_write_summary() {
       echo "- qli-ci PR: #$qli_ci_pr_number"
     fi
     echo "- pkg-example temp branch: \`$temp_branch\`"
+    echo "- promote mode: \`$promote_mode\`"
     echo "- path toggles: debian=${enable_debian}, ubuntu=${enable_ubuntu}"
     echo "- result: **$overall_status**"
     if [[ -n "$note" ]]; then
@@ -1195,7 +1393,8 @@ Usage:
   $0 prepare-temp-branch
   $0 reset-lane <debian|ubuntu>
   $0 seed-ubuntu
-  $0 promote-tag <debian|ubuntu> <tag>
+  $0 seed-prebuilt-fixtures [ubuntu]
+  $0 promote-tag <debian|ubuntu> <tag> [source|prebuilt]
   $0 sync-pr-hook <debian|ubuntu> <tag>
   $0 wait-pr-build <debian|ubuntu> <tag>
   $0 merge-pr <debian|ubuntu> <tag>
@@ -1223,9 +1422,13 @@ main() {
     seed-ubuntu)
       cmd_seed_ubuntu
       ;;
+    seed-prebuilt-fixtures)
+      shift
+      cmd_seed_prebuilt_fixtures "${1:-ubuntu}"
+      ;;
     promote-tag)
       shift
-      cmd_promote_tag "${1:-}" "${2:-}"
+      cmd_promote_tag "${1:-}" "${2:-}" "${3:-}"
       ;;
     sync-pr-hook)
       shift

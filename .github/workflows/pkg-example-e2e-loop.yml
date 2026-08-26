@@ -1,9 +1,9 @@
 name: pkg-example e2e loop
 
 description: |
-  Runs a full pkg-example integration loop against the qli-ci ref under test:
-  reset -> promote -> promotion PR build -> merge -> release
-  for Debian and Ubuntu lanes with tags v1.0.0 and v1.1.0.
+  Runs pkg-example integration loops against the qli-ci ref under test:
+  prebuilt promote lane first, then Debian and Ubuntu source lanes.
+  Lifecycle: reset -> promote -> promotion PR build -> merge -> release.
 
 on:
   pull_request:
@@ -41,16 +41,201 @@ jobs:
       - name: Acquire global slot
         run: echo "Acquired global pkg-example e2e slot"
 
+  prebuilt-promote-lane:
+    name: pkg-example e2e (prebuilt promote lane)
+    needs: [global-lock]
+    if: ${{ vars.ENABLE_PREBUILT_PATH != '0' }}
+    runs-on: ubuntu-latest
+    env:
+      SUMMARY_FILE: /tmp/pkg-example-e2e-prebuilt-summary.md
+      STATE_FILE: /tmp/pkg-example-e2e-prebuilt-state.json
+      ENABLE_DEBIAN_PATH: "0"
+      ENABLE_UBUNTU_PATH: "1"
+      PROMOTE_MODE: prebuilt
+
+    steps:
+      - name: Checkout qli-ci
+        uses: actions/checkout@v5
+
+      - name: Resolve run parameters
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          qli_ci_ref=""
+          qli_ci_pr_number=""
+          is_fork_pr="false"
+
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            qli_ci_ref="$(jq -r '.pull_request.head.sha // empty' "$GITHUB_EVENT_PATH")"
+            qli_ci_pr_number="$(jq -r '.pull_request.number // empty' "$GITHUB_EVENT_PATH")"
+            pr_is_fork="$(jq -r '.pull_request.head.repo.fork // false' "$GITHUB_EVENT_PATH")"
+            if [[ "${pr_is_fork}" == "true" ]]; then
+              is_fork_pr="true"
+            fi
+          elif [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            qli_ci_ref="$(jq -r '.inputs["qli-ci-ref"] // empty' "$GITHUB_EVENT_PATH")"
+            qli_ci_pr_number="$(jq -r '.inputs["qli-ci-pr-number"] // empty' "$GITHUB_EVENT_PATH")"
+          fi
+
+          if [[ -z "${qli_ci_ref}" ]]; then
+            qli_ci_ref="${GITHUB_SHA_VALUE}"
+          fi
+
+          if [[ -z "${qli_ci_ref}" ]]; then
+            echo "Unable to resolve qli-ci ref under test" >&2
+            exit 1
+          fi
+
+          echo "qli_ci_ref=${qli_ci_ref}" >> "$GITHUB_OUTPUT"
+          echo "qli_ci_pr_number=${qli_ci_pr_number}" >> "$GITHUB_OUTPUT"
+          echo "is_fork_pr=${is_fork_pr}" >> "$GITHUB_OUTPUT"
+
+      - name: Initialize e2e state
+        env:
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          QLI_CI_PR_NUMBER: ${{ steps.resolve.outputs.qli_ci_pr_number }}
+          IS_FORK_PR: ${{ steps.resolve.outputs.is_fork_pr }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+          ENABLE_DEBIAN_PATH: ${{ env.ENABLE_DEBIAN_PATH }}
+          ENABLE_UBUNTU_PATH: ${{ env.ENABLE_UBUNTU_PATH }}
+          PROMOTE_MODE: ${{ env.PROMOTE_MODE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh init
+
+      - name: Prepare temp pkg-example branch
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh prepare-temp-branch
+
+      - name: Prebuilt reset (ubuntu lane)
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh reset-lane ubuntu
+
+      - name: Prebuilt seed ubuntu branch
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh seed-ubuntu
+
+      - name: Install arm64 cross compiler (prebuilt fixtures)
+        run: |
+          set -euo pipefail
+          if ! command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes gcc-aarch64-linux-gnu
+          fi
+
+      - name: Prebuilt seed fixture artifacts
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh seed-prebuilt-fixtures ubuntu
+
+      - name: Prebuilt v1.0.0 promote
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+          PROMOTE_MODE: ${{ env.PROMOTE_MODE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh promote-tag ubuntu v1.0.0
+
+      - name: Prebuilt v1.0.0 sync PR hook
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.0.0
+
+      - name: Prebuilt v1.0.0 PR build
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.0.0
+
+      - name: Prebuilt v1.0.0 merge PR
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh merge-pr ubuntu v1.0.0
+
+      - name: Prebuilt v1.0.0 release
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh release-tag ubuntu v1.0.0
+
+      - name: Build prebuilt summary
+        if: ${{ always() }}
+        env:
+          STATE_FILE: ${{ env.STATE_FILE }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh write-summary
+
+      - name: Append prebuilt summary to workflow
+        if: ${{ always() }}
+        env:
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+          if [[ -f "${SUMMARY_FILE}" ]]; then
+            cat "${SUMMARY_FILE}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## pkg-example e2e prebuilt promote lane" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "No summary was generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Cleanup temp branch and workspace
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./scripts/pkg_example_e2e_loop.sh cleanup
+
   debian-lane:
     name: pkg-example e2e (debian lane)
-    needs: [global-lock]
-    if: ${{ vars.ENABLE_DEBIAN_PATH == '1' }}
+    needs: [global-lock, prebuilt-promote-lane]
+    if: ${{ !cancelled() && always() && vars.ENABLE_DEBIAN_PATH == '1' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.prebuilt-promote-lane.result) }}
     runs-on: ubuntu-latest
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-summary.md
       STATE_FILE: /tmp/pkg-example-e2e-state.json
       ENABLE_DEBIAN_PATH: ${{ vars.ENABLE_DEBIAN_PATH }}
       ENABLE_UBUNTU_PATH: ${{ vars.ENABLE_UBUNTU_PATH }}
+      PROMOTE_MODE: source
 
     steps:
       - name: Checkout qli-ci
@@ -225,6 +410,7 @@ jobs:
       STATE_FILE: /tmp/pkg-example-e2e-state.json
       ENABLE_DEBIAN_PATH: ${{ vars.ENABLE_DEBIAN_PATH }}
       ENABLE_UBUNTU_PATH: ${{ vars.ENABLE_UBUNTU_PATH }}
+      PROMOTE_MODE: source
 
     steps:
       - name: Checkout qli-ci

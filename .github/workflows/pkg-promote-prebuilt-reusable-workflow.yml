@@ -89,6 +89,7 @@ jobs:
       - name: Checkout Packaging Repo
         uses: actions/checkout@v5
         with:
+          token: ${{secrets.DEB_PKG_BOT_CI_TOKEN}}
           path: ./package-repo
           fetch-depth: 0
           fetch-tags: true

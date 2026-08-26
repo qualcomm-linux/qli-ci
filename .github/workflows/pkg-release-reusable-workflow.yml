@@ -793,7 +793,7 @@ jobs:
 
   upload-debs-to-s3:
     name: Upload Debs to S3 (Ubuntu, AXIOM testing)
-    if: ${{ needs.build-and-test.outputs.family == 'ubuntu' }}
+    if: ${{ needs.build-and-test.outputs.family == 'ubuntu' && vars.IS_TEST_PKG != 'true' }}
     needs:
       - prepare-release-source
       - build-and-test

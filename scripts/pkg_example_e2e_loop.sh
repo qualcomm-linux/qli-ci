@@ -853,7 +853,7 @@ cmd_seed_prebuilt_fixtures() {
     done
 
     cat > upstream.conf <<EOF
-export ARTIFACTORY="file://\$(cd \"\$(dirname \"\${BASH_SOURCE[0]}\")\" && pwd)/${PREBUILT_FIXTURE_ROOT}"
+export ARTIFACTORY="file://\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/${PREBUILT_FIXTURE_ROOT}"
 export TAG="${initial_tag}"
 export DISTRO="${PREBUILT_DISTRO}"
 export PACKAGE_NAME="${initial_package}"

@@ -16,13 +16,14 @@ lifecycle loop:
 
 `reset -> promote -> promotion PR build -> merge -> release`
 
-for tags:
+for source tags:
 
 - `v1.0.0`
 - `v1.1.0`
 
 and lanes:
 
+- Prebuilt promote lane (`qcom/ubuntu/resolute`, prebuilt mode, `v1.0.0`)
 - Debian lane (`qcom/debian/latest`)
 - Ubuntu lane (`qcom/ubuntu/resolute`)
 
@@ -35,8 +36,11 @@ Workflow triggers:
 
 Run-level concurrency:
 
-- `group: pkg-example-e2e-loop-global`
+- `group: pkg-example-e2e-loop-${{ github.event.pull_request.number || github.ref }}`
 - `cancel-in-progress: true`
+- plus a dedicated `global-lock` job-level concurrency gate:
+  - `group: pkg-example-e2e-loop-global`
+  - `cancel-in-progress: false`
 
 This keeps only the latest loop run active when new commits are pushed.
 
@@ -58,14 +62,17 @@ Expected behavior:
 
 ## Job Topology
 
-The workflow is intentionally split into two jobs for GitHub UI clarity:
+The workflow is intentionally split into sequential jobs for GitHub UI clarity:
 
-1. `pkg-example e2e (debian lane)`
-2. `pkg-example e2e (ubuntu lane)`
+1. `pkg-example e2e (global slot)`
+2. `pkg-example e2e (prebuilt promote lane)`
+3. `pkg-example e2e (debian lane)`
+4. `pkg-example e2e (ubuntu lane)`
 
 Execution is sequential, not parallel:
 
-- Ubuntu lane has `needs: [debian-lane]`.
+- Prebuilt promote lane runs before Debian lane.
+- Debian lane runs before Ubuntu lane.
 
 State handoff:
 
@@ -79,6 +86,7 @@ State handoff:
 
 Job-level toggles come from repo variables:
 
+- `ENABLE_PREBUILT_PATH` (`1` or `0`)
 - `ENABLE_DEBIAN_PATH` (`1` or `0`)
 - `ENABLE_UBUNTU_PATH` (`1` or `0`)
 
@@ -114,14 +122,15 @@ Per enabled lane:
 
 1. `prepare-temp-branch`
 2. `reset-lane <lane>`
-3. Ubuntu-only: `seed-ubuntu`
-4. For each test tag:
+3. Ubuntu-based lanes: `seed-ubuntu`
+4. Prebuilt promote lane only: `seed-prebuilt-fixtures ubuntu`
+5. For each test tag:
    - `promote-tag <lane> <tag>`
    - `sync-pr-hook <lane> <tag>`
    - `wait-pr-build <lane> <tag>`
    - `merge-pr <lane> <tag>`
    - `release-tag <lane> <tag>`
-5. Ubuntu-only between first and second tag:
+6. Ubuntu source lane only between first and second tag:
    - `curate-ubuntu-wip-after-first-release`
    - rewrites the top changelog WIP reminder entry to a releasable entry
      so the second release cycle can proceed autonomously.
@@ -141,7 +150,8 @@ Primary state file:
 
 It tracks:
 
-- metadata (`qli_ci_ref`, temp branch, path toggles, overall failure flags)
+- metadata (`qli_ci_ref`, temp branch, promote mode, path toggles,
+  overall failure flags)
 - lane-level phases (`reset`, `seed`)
 - tag-level phases (`promote`, `sync`, `prbuild`, `merge`, `release`)
 - promotion PR metadata (`number`, URL, head branch, head SHA)
@@ -216,18 +226,20 @@ summaries are preserved.
 
 When validating architecture vs implementation, verify:
 
-1. Topology: two jobs, Ubuntu depends on Debian.
-2. Job-level lane gates use `ENABLE_DEBIAN_PATH`/`ENABLE_UBUNTU_PATH`.
+1. Topology: global slot -> prebuilt promote lane -> Debian lane -> Ubuntu lane.
+2. Job-level lane gates use
+   `ENABLE_PREBUILT_PATH`/`ENABLE_DEBIAN_PATH`/`ENABLE_UBUNTU_PATH`.
 3. Loop phase order matches this document.
-4. Shared state artifact handoff still exists.
+4. Shared state artifact handoff still exists for Debian -> Ubuntu.
 5. E2E workflow still uses cancel-in-progress concurrency.
 6. Cancellation semantics still hold:
    - Ubuntu lane does not schedule after cancellation.
    - script trap/polling checks still exit promptly on cancel signals.
-7. PR-hook templates still define PR-level concurrency cancel-in-progress.
-8. PR-build wait still keys on PR head SHA and chooses latest run.
-9. Release wait still handles pending deployment approvals.
-10. `DEB_PKG_BOT_CI_TOKEN` remains a required contract.
-11. Post steps still run on `always()` for summary/comment/cleanup.
+7. Prebuilt lane seeds local fixture artifacts and sets `PROMOTE_MODE=prebuilt`.
+8. PR-hook templates still define PR-level concurrency cancel-in-progress.
+9. PR-build wait still keys on PR head SHA and chooses latest run.
+10. Release wait still handles pending deployment approvals.
+11. `DEB_PKG_BOT_CI_TOKEN` remains a required contract.
+12. Post steps still run on `always()` for summary/comment/cleanup.
 
 If any item changes intentionally, update this document in the same PR.

@@ -1,10 +1,9 @@
-name: Qualcomm Upstream Version Promotion Reusable Workflow
+name: Qualcomm Promotion Reusable Workflow
 description: |
-  The purpose of this workflow is to take a given tag that exists in the upstream repository
-  that the package repo tracks, and then import it with git-buildpackage so that it makes its
-  way in the upstream and debian branch. It also takes care of increasing the version number
-  in the changelog file. The tracked upstream repo needs to be properly configured in the
-  debian/watch file.
+  Unified promotion workflow for source-based and prebuilt package repositories.
+  Mode is auto-detected from the packaging branch:
+    - prebuilt when prebuild.conf/prebuilt.conf/upstream.conf exists
+    - source otherwise
 
 on:
   workflow_call:
@@ -21,18 +20,50 @@ on:
         required: true
 
       upstream-tag:
-        description: The tag in the upstream repo to promote to.
+        description: |
+          Source mode: tag in the upstream repository to promote.
+          Prebuilt mode: optional alias for new-tag.
         type: string
-        required: true
+        required: false
+        default: ""
 
       upstream-repo:
-        description: The upstream git repo adress
+        description: |
+          Source mode only: upstream git repository address, for example
+          "qualcomm-linux/upstream-project".
         type: string
-        required: true
+        required: false
+        default: ""
+
+      new-tag:
+        description: |
+          Prebuilt mode: new Artifactory TAG value to promote to.
+          Source mode: optional alias for upstream-tag.
+        type: string
+        required: false
+        default: ""
+
+      new-package-name:
+        description: |
+          Prebuilt mode only: new tarball filename if it changed.
+          If omitted, keeps PACKAGE_NAME from upstream.conf unchanged.
+        type: string
+        required: false
+        default: ""
+
+      new-debian-version:
+        description: |
+          Prebuilt mode only: changelog version override.
+          If omitted, derived from PACKAGE_NAME.
+        type: string
+        required: false
+        default: ""
 
     secrets:
       PAT:
-        required: true
+        required: false
+      DEB_PKG_BOT_CI_TOKEN:
+        required: false
 
 permissions:
   contents: write
@@ -50,8 +81,89 @@ env:
   UPSTREAM_TAG_ALREADY_EXISTS: false
 
 jobs:
+  resolve-promote-mode:
+    name: Resolve Promotion Mode
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.resolve.outputs.mode }}
+      effective-tag: ${{ steps.resolve.outputs.effective_tag }}
+      prebuilt-gate-file: ${{ steps.resolve.outputs.prebuilt_gate_file }}
+
+    steps:
+      - name: Checkout Packaging Repo
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          ref: ${{ inputs.debian-branch }}
+
+      - name: Resolve mode and effective promotion tag
+        id: resolve
+        env:
+          INPUTS_UPSTREAM_TAG: ${{ inputs.upstream-tag }}
+          INPUTS_NEW_TAG: ${{ inputs.new-tag }}
+          INPUTS_UPSTREAM_REPO: ${{ inputs.upstream-repo }}
+        run: |
+          set -euo pipefail
+
+          mode="source"
+          prebuilt_gate_file=""
+
+          if [[ -f "prebuild.conf" ]]; then
+            mode="prebuilt"
+            prebuilt_gate_file="prebuild.conf"
+          elif [[ -f "prebuilt.conf" ]]; then
+            mode="prebuilt"
+            prebuilt_gate_file="prebuilt.conf"
+          elif [[ -f "upstream.conf" ]]; then
+            mode="prebuilt"
+            prebuilt_gate_file="upstream.conf"
+          fi
+
+          if [[ "$mode" == "prebuilt" ]]; then
+            if [[ -n "$INPUTS_UPSTREAM_TAG" && -n "$INPUTS_NEW_TAG" && "$INPUTS_UPSTREAM_TAG" != "$INPUTS_NEW_TAG" ]]; then
+              echo "❌ upstream-tag and new-tag were both provided with different values." >&2
+              echo "❌ Provide only one tag input, or provide identical values." >&2
+              exit 1
+            fi
+
+            effective_tag="${INPUTS_NEW_TAG:-$INPUTS_UPSTREAM_TAG}"
+            if [[ -z "$effective_tag" ]]; then
+              echo "❌ Prebuilt promotion requires new-tag (or upstream-tag alias)." >&2
+              exit 1
+            fi
+          else
+            if [[ -n "$INPUTS_UPSTREAM_TAG" && -n "$INPUTS_NEW_TAG" && "$INPUTS_UPSTREAM_TAG" != "$INPUTS_NEW_TAG" ]]; then
+              echo "❌ upstream-tag and new-tag were both provided with different values." >&2
+              echo "❌ Provide only one tag input, or provide identical values." >&2
+              exit 1
+            fi
+
+            effective_tag="${INPUTS_UPSTREAM_TAG:-$INPUTS_NEW_TAG}"
+            if [[ -z "$effective_tag" ]]; then
+              echo "❌ Source promotion requires upstream-tag (or new-tag alias)." >&2
+              exit 1
+            fi
+
+            if [[ -z "${INPUTS_UPSTREAM_REPO}" ]]; then
+              echo "❌ Source promotion requires upstream-repo." >&2
+              exit 1
+            fi
+          fi
+
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "effective_tag=$effective_tag" >> "$GITHUB_OUTPUT"
+          echo "prebuilt_gate_file=$prebuilt_gate_file" >> "$GITHUB_OUTPUT"
+
+          echo "ℹ️ Resolved promotion mode: $mode"
+          echo "ℹ️ Effective promotion tag: $effective_tag"
+          if [[ -n "$prebuilt_gate_file" ]]; then
+            echo "ℹ️ Prebuilt mode gated by: $prebuilt_gate_file"
+          fi
+
   promote-upstream-version:
-    name: Promote
+    name: Promote (source mode)
+    needs: [resolve-promote-mode]
+    if: ${{ needs.resolve-promote-mode.outputs.mode == 'source' }}
 
     runs-on: ubuntu-24.04-arm
 
@@ -66,12 +178,22 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    env:
+      INPUTS_UPSTREAM_TAG: ${{ needs.resolve-promote-mode.outputs.effective-tag }}
+      INPUTS_UPSTREAM_REPO: ${{ inputs.upstream-repo }}
+      PROMOTE_TOKEN: ${{ secrets.PAT || secrets.DEB_PKG_BOT_CI_TOKEN }}
+
     steps:
+      - name: Validate promotion token
+        run: |
+          if [[ -z "${PROMOTE_TOKEN}" ]]; then
+            echo "❌ No promotion token was provided."
+            echo "❌ Provide PAT or DEB_PKG_BOT_CI_TOKEN."
+            exit 1
+          fi
 
       # Normalizing a tag : (e.g ) v1.0.0 -> 1.0.0
       - name: Normalize Tag Version
-        env:
-          INPUTS_UPSTREAM_TAG: ${{inputs.upstream-tag}}
         run: |
           echo "ℹ️ Input upstream-tag is : ${INPUTS_UPSTREAM_TAG}"
 
@@ -164,7 +286,7 @@ jobs:
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{inputs.qli-ci-ref}}
-          token: ${{secrets.PAT}}
+          token: ${{ env.PROMOTE_TOKEN }}
           path: ./qli-ci
           fetch-depth: 1
           sparse-checkout: |
@@ -175,13 +297,13 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v5
         with:
-          token: ${{secrets.PAT}}
+          token: ${{ env.PROMOTE_TOKEN }}
           path: ./package-repo
           fetch-depth: 0
 
       - name: Authenticate with GitHub
         run : |
-          gh auth login --with-token <<< "${{secrets.PAT}}"
+          gh auth login --with-token <<< "${PROMOTE_TOKEN}"
 
       - name: Show branches/tags and checkout debian/upstream latest
         working-directory: ./package-repo
@@ -241,8 +363,6 @@ jobs:
 
       - name: Make sure the upstream tag is not already part of the repo
         working-directory: ./package-repo
-        env:
-          INPUTS_UPSTREAM_TAG: ${{inputs.upstream-tag}}
         run: |
           if (git tag --list | grep "${INPUTS_UPSTREAM_TAG}"); then
             echo "❌ The supplied upstream tag is wrong as it pertains to this repo already."
@@ -251,8 +371,6 @@ jobs:
 
       - name: Validate the upstream tag promotion state
         working-directory: ./package-repo
-        env:
-          INPUTS_UPSTREAM_TAG: ${{inputs.upstream-tag}}
         run: |
           # Check if the resolved promoted tag does not already exist
           if ! git rev-parse --verify "refs/tags/${{env.UPSTREAM_PROMOTED_TAG}}" >/dev/null 2>&1; then
@@ -308,16 +426,9 @@ jobs:
 
       - name: Add Upstream Link As A Remote And Fetch Tags
         working-directory: ./package-repo
-        env:
-          INPUTS_UPSTREAM_REPO: ${{inputs.upstream-repo}}
         run: |
-          if [ -n "${{secrets.PAT}}" ]; then
-            echo "ℹ️ Adding upstream remote with token authentication. This is because the upstream repository may be private and require authentication to fetch tags."
-            REPO_URL=https://x-access-token:${{secrets.PAT}}@github.com/${INPUTS_UPSTREAM_REPO}.git
-          else
-            echo "ℹ️ Adding upstream remote without token authentication, repo is assumed to be public"
-            REPO_URL=https://github.com/${INPUTS_UPSTREAM_REPO}.git
-          fi
+          echo "ℹ️ Adding upstream remote with token authentication."
+          REPO_URL=https://x-access-token:${PROMOTE_TOKEN}@github.com/${INPUTS_UPSTREAM_REPO}.git
 
           git remote add upstream-source $REPO_URL
 
@@ -328,20 +439,14 @@ jobs:
           if ! git fetch upstream-source "+refs/tags/*:refs/tags/*"; then
             echo "❌ Failed to fetch tags from '${INPUTS_UPSTREAM_REPO}'."
 
-            if [ -n "${{secrets.PAT}}" ]; then
-              echo "❌ Ensure that the PAT token has the  permission on the repository."
-              echo "❌ For more information about this token, see the README.md in qli-ci repo."
-            else
-              echo "❌ Make sure the upstream repository is public or if it is private that the PAT token is set and has the necessary permissions."
-            fi
+            echo "❌ Ensure the promotion token has repository read access."
+            echo "❌ For more information about this token, see the README.md in qli-ci repo."
 
             exit 1
           fi
 
       - name: Ensure the tag exists in the upstream repo
         working-directory: ./package-repo
-        env:
-          INPUTS_UPSTREAM_TAG: ${{inputs.upstream-tag}}
         run: |
           if ! git rev-parse --verify "refs/tags/${INPUTS_UPSTREAM_TAG}" >/dev/null 2>&1; then
             echo "❌ The specified upstream tag '${INPUTS_UPSTREAM_TAG}' does not exist in the upstream repository."
@@ -349,8 +454,6 @@ jobs:
           fi
 
       - name: Pre-populate the upstream/latest branch if first promotion
-        env:
-          INPUTS_UPSTREAM_TAG: ${{inputs.upstream-tag}}
         run: |
           cd ./package-repo
 
@@ -371,7 +474,6 @@ jobs:
           VARS_DEB_PKG_BOT_CI_NAME: ${{vars.DEB_PKG_BOT_CI_NAME}}
           VARS_DEB_PKG_BOT_CI_EMAIL: ${{vars.DEB_PKG_BOT_CI_EMAIL}}
           INPUTS_DEBIAN_BRANCH: ${{inputs.debian-branch}}
-          INPUTS_UPSTREAM_TAG: ${{inputs.upstream-tag}}
         run: |
           git config user.name "${VARS_DEB_PKG_BOT_CI_NAME}"
           git config user.email "${VARS_DEB_PKG_BOT_CI_EMAIL}"
@@ -427,7 +529,6 @@ jobs:
         working-directory: ./package-repo
         env:
           INPUTS_DEBIAN_BRANCH: ${{inputs.debian-branch}}
-          INPUTS_UPSTREAM_TAG: ${{inputs.upstream-tag}}
         run: |
           ../qli-ci/scripts/create_promotion_pr.py \
             --base-branch "${INPUTS_DEBIAN_BRANCH}" \
@@ -436,3 +537,283 @@ jobs:
             --promotion-version "${{env.PROMOTION_VERSION}}" \
             --promotion-pr-branch "${{env.PROMOTION_PR_BRANCH}}" \
             --promoted-upstream-tag "${{env.UPSTREAM_PROMOTED_TAG}}"
+
+  promote-prebuilt-version:
+    name: Promote (prebuilt mode)
+    needs: [resolve-promote-mode]
+    if: ${{ needs.resolve-promote-mode.outputs.mode == 'prebuilt' }}
+
+    runs-on: ubuntu-24.04-arm
+
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      # This docker image is built and published by the qualcomm-linux/docker-pkg-build repo CI workflow
+      image: ghcr.io/qualcomm-linux/pkg-builder:noble
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    env:
+      INPUTS_NEW_TAG: ${{ needs.resolve-promote-mode.outputs.effective-tag }}
+      PREBUILT_GATE_FILE: ${{ needs.resolve-promote-mode.outputs.prebuilt-gate-file }}
+      PROMOTE_TOKEN: ${{ secrets.PAT || secrets.DEB_PKG_BOT_CI_TOKEN }}
+
+    steps:
+      - name: Validate promotion token
+        run: |
+          if [[ -z "${PROMOTE_TOKEN}" ]]; then
+            echo "❌ No promotion token was provided."
+            echo "❌ Provide PAT or DEB_PKG_BOT_CI_TOKEN."
+            exit 1
+          fi
+
+      - name: Checkout qli-ci
+        uses: actions/checkout@v5
+        with:
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          token: ${{ env.PROMOTE_TOKEN }}
+          path: ./qli-ci
+          fetch-depth: 1
+          sparse-checkout: |
+            .github
+            scripts
+
+      - name: Checkout Packaging Repo
+        uses: actions/checkout@v5
+        with:
+          token: ${{ env.PROMOTE_TOKEN }}
+          path: ./package-repo
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Validate and Read Current prebuilt config
+        env:
+          INPUTS_DEBIAN_BRANCH: ${{ inputs.debian-branch }}
+        run: |
+          set -euo pipefail
+          cd ./package-repo
+
+          git checkout "${INPUTS_DEBIAN_BRANCH}"
+
+          if [[ -n "${PREBUILT_GATE_FILE}" ]]; then
+            echo "ℹ️ Prebuilt mode gated by ${PREBUILT_GATE_FILE}"
+          fi
+
+          if [[ ! -f "upstream.conf" ]]; then
+            echo "❌ upstream.conf not found in repository root."
+            echo "❌ Prebuilt promotion requires upstream.conf to define ARTIFACTORY metadata."
+            exit 1
+          fi
+
+          source upstream.conf
+
+          for var in ARTIFACTORY TAG DISTRO PACKAGE_NAME; do
+            if [[ -z "${!var}" ]]; then
+              echo "❌ Required variable '$var' is not set in upstream.conf"
+              exit 1
+            fi
+          done
+
+          echo "ℹ️ Current upstream.conf:"
+          echo "   ARTIFACTORY  : $ARTIFACTORY"
+          echo "   TAG          : $TAG"
+          echo "   DISTRO       : $DISTRO"
+          echo "   PACKAGE_NAME : $PACKAGE_NAME"
+
+          if [[ "$TAG" == "${INPUTS_NEW_TAG}" ]]; then
+            echo "❌ The requested tag '${INPUTS_NEW_TAG}' is identical to current TAG '$TAG'."
+            echo "❌ Nothing to promote."
+            exit 1
+          fi
+
+          echo "CURRENT_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "CURRENT_PACKAGE_NAME=$PACKAGE_NAME" >> "$GITHUB_ENV"
+          echo "ARTIFACTORY=$ARTIFACTORY" >> "$GITHUB_ENV"
+          echo "DISTRO=$DISTRO" >> "$GITHUB_ENV"
+
+      - name: Resolve New Package Name and Debian Version
+        env:
+          INPUTS_NEW_PACKAGE_NAME: ${{ inputs.new-package-name }}
+          INPUTS_NEW_DEBIAN_VERSION: ${{ inputs.new-debian-version }}
+          INPUTS_DEBIAN_BRANCH: ${{ inputs.debian-branch }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${INPUTS_NEW_PACKAGE_NAME}" ]]; then
+            NEW_PACKAGE_NAME="${INPUTS_NEW_PACKAGE_NAME}"
+            echo "ℹ️ Using provided new-package-name: $NEW_PACKAGE_NAME"
+          else
+            NEW_PACKAGE_NAME="${CURRENT_PACKAGE_NAME}"
+            echo "ℹ️ No new-package-name provided, keeping current: $NEW_PACKAGE_NAME"
+          fi
+          echo "NEW_PACKAGE_NAME=$NEW_PACKAGE_NAME" >> "$GITHUB_ENV"
+
+          if [[ -n "${INPUTS_NEW_DEBIAN_VERSION}" ]]; then
+            NEW_DEBIAN_VERSION="${INPUTS_NEW_DEBIAN_VERSION}"
+            echo "ℹ️ Using provided new-debian-version: $NEW_DEBIAN_VERSION"
+          else
+            derived_version="$(echo "$NEW_PACKAGE_NAME" | sed -n 's/^[^_]*_\([^_]*\)_.*/\1/p')"
+            if [[ -z "$derived_version" ]]; then
+              echo "❌ Could not derive Debian version from PACKAGE_NAME '$NEW_PACKAGE_NAME'."
+              echo "❌ Expected format: <source>_<version>_<arch>.tar.gz"
+              echo "❌ Provide new-debian-version explicitly."
+              exit 1
+            fi
+
+            case "${INPUTS_DEBIAN_BRANCH}" in
+              debian/*)
+                NEW_DEBIAN_VERSION="${derived_version}-1"
+                ;;
+              qli-staging/*)
+                NEW_DEBIAN_VERSION="${derived_version}-0qli+staging1"
+                ;;
+              qli/*|qcom/*)
+                NEW_DEBIAN_VERSION="${derived_version}-0qli1"
+                ;;
+              ubuntu/*)
+                NEW_DEBIAN_VERSION="${derived_version}-0ubuntu1"
+                ;;
+              *)
+                echo "❌ Unsupported debian-branch prefix '${INPUTS_DEBIAN_BRANCH}'."
+                echo "❌ Expected one of: debian/*, qli/*, qli-staging/*, qcom/*, ubuntu/*."
+                exit 1
+                ;;
+            esac
+          fi
+          echo "NEW_DEBIAN_VERSION=$NEW_DEBIAN_VERSION" >> "$GITHUB_ENV"
+
+          transformed="$(echo "$NEW_DEBIAN_VERSION" | perl -pe 'y/:~/%_/; s/\.(?=\.|$|lock$)/.#/g')"
+          branch_version="$(echo "$transformed" | sed 's/[^A-Za-z0-9.+%_#()-]//g')"
+          if [[ "$branch_version" != "$transformed" ]]; then
+            echo "❌ Transformed Debian version '$transformed' contains unsupported characters for a git ref."
+            exit 1
+          fi
+
+          PR_BRANCH="debian/pr/${branch_version}"
+          if ! git check-ref-format "refs/heads/${PR_BRANCH}"; then
+            echo "❌ Computed promotion PR branch '${PR_BRANCH}' is not a valid git ref."
+            exit 1
+          fi
+
+          echo "PR_BRANCH=${PR_BRANCH}" >> "$GITHUB_ENV"
+
+          echo "ℹ️ Promotion summary:"
+          echo "   TAG          : ${CURRENT_TAG} -> ${INPUTS_NEW_TAG}"
+          echo "   PACKAGE_NAME : ${CURRENT_PACKAGE_NAME} -> ${NEW_PACKAGE_NAME}"
+          echo "   Debian ver   : ${NEW_DEBIAN_VERSION}"
+          echo "   PR branch    : ${PR_BRANCH}"
+
+      - name: Verify New Tarball Exists on Artifactory
+        run: |
+          set -euo pipefail
+
+          DOWNLOAD_URL="${ARTIFACTORY}/${INPUTS_NEW_TAG}/${DISTRO}/${NEW_PACKAGE_NAME}"
+          echo "ℹ️ Verifying tarball exists at: $DOWNLOAD_URL"
+
+          if curl --head --fail --silent --show-error "$DOWNLOAD_URL"; then
+            echo "✅ Tarball confirmed available on Artifactory"
+          else
+            echo "❌ Tarball not found at: $DOWNLOAD_URL"
+            echo "❌ Please verify the promotion tag and package name."
+            exit 1
+          fi
+
+      - name: Create Promotion Branch and Update upstream.conf
+        env:
+          VARS_DEB_PKG_BOT_CI_NAME: ${{ vars.DEB_PKG_BOT_CI_NAME }}
+          VARS_DEB_PKG_BOT_CI_EMAIL: ${{ vars.DEB_PKG_BOT_CI_EMAIL }}
+        run: |
+          set -euo pipefail
+          cd ./package-repo
+
+          git config user.name "${VARS_DEB_PKG_BOT_CI_NAME}"
+          git config user.email "${VARS_DEB_PKG_BOT_CI_EMAIL}"
+
+          git checkout -b "${PR_BRANCH}"
+
+          sed -i "s|^export TAG=.*|export TAG=\"${INPUTS_NEW_TAG}\"|" upstream.conf
+          if [[ "${NEW_PACKAGE_NAME}" != "${CURRENT_PACKAGE_NAME}" ]]; then
+            sed -i "s|^export PACKAGE_NAME=.*|export PACKAGE_NAME=\"${NEW_PACKAGE_NAME}\"|" upstream.conf
+          fi
+
+          echo "ℹ️ Updated upstream.conf:"
+          cat upstream.conf | sed 's/^/   /'
+
+      - name: Sync PR hook workflow template
+        run: |
+          set -euo pipefail
+          cd ./package-repo
+
+          mkdir -p .github/workflows
+          cp ../qli-ci/.github/pkg-workflows/debian/pkg-pr-hook.yml .github/workflows/pkg-pr-hook.yml
+          git add .github/workflows/pkg-pr-hook.yml
+
+      - name: Bump Debian Changelog
+        env:
+          VARS_DEB_PKG_BOT_CI_NAME: ${{ vars.DEB_PKG_BOT_CI_NAME }}
+          VARS_DEB_PKG_BOT_CI_EMAIL: ${{ vars.DEB_PKG_BOT_CI_EMAIL }}
+        run: |
+          set -euo pipefail
+          cd ./package-repo
+
+          export DEBFULLNAME="${VARS_DEB_PKG_BOT_CI_NAME}"
+          export DEBEMAIL="${VARS_DEB_PKG_BOT_CI_EMAIL}"
+
+          dch \
+            --newversion="${NEW_DEBIAN_VERSION}" \
+            --distribution=UNRELEASED \
+            "New upstream release (Artifactory tag: ${INPUTS_NEW_TAG})"
+
+          echo "ℹ️ Updated debian/changelog (first 5 lines):"
+          head -5 debian/changelog | sed 's/^/   /'
+
+      - name: Commit and Push Promotion Branch
+        run: |
+          set -euo pipefail
+          cd ./package-repo
+
+          git add upstream.conf debian/changelog
+          git commit -s -m "Promote to Artifactory tag ${INPUTS_NEW_TAG} (version ${NEW_DEBIAN_VERSION})"
+
+          git push origin "${PR_BRANCH}"
+
+          git log --graph --oneline -n 5 --color=always
+
+      - name: Open Promotion PR
+        env:
+          INPUTS_DEBIAN_BRANCH: ${{ inputs.debian-branch }}
+        run: |
+          set -euo pipefail
+          cd ./package-repo
+
+          gh auth login --with-token <<< "${PROMOTE_TOKEN}"
+
+          PR_TITLE="Promotion to ${NEW_DEBIAN_VERSION} (Artifactory tag: ${INPUTS_NEW_TAG})"
+
+          PR_BODY=$(cat <<EOF
+          ## Automated prebuilt promotion PR
+
+          This PR was generated by \`pkg-promote\` in prebuilt mode.
+
+          ### Changes
+
+          | Field | Old | New |
+          |---|---|---|
+          | Artifactory TAG | \`${CURRENT_TAG}\` | \`${INPUTS_NEW_TAG}\` |
+          | PACKAGE_NAME | \`${CURRENT_PACKAGE_NAME}\` | \`${NEW_PACKAGE_NAME}\` |
+          | Debian version | (previous) | \`${NEW_DEBIAN_VERSION}\` |
+
+          ### Tarball verified at
+          \`${ARTIFACTORY}/${INPUTS_NEW_TAG}/${DISTRO}/${NEW_PACKAGE_NAME}\`
+          EOF
+          )
+
+          gh pr create \
+            --title "$PR_TITLE" \
+            --body "$PR_BODY" \
+            --base "${INPUTS_DEBIAN_BRANCH}" \
+            --head "${PR_BRANCH}"

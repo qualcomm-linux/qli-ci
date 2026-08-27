@@ -10,9 +10,36 @@ on:
         required: true
 
       upstream-tag:
-        description: The upstream tag to promote this package repo to. Eg, v1.1.0 or 1.2.0, depending on the versioning style
+        description: |
+          Source mode: upstream git tag to promote to.
+          Optional in prebuilt mode.
         type: string
-        required: true
+        required: false
+        default: ""
+
+      new-tag:
+        description: |
+          Prebuilt mode: new Artifactory TAG value to promote to.
+          Optional alias for upstream-tag in source mode.
+        type: string
+        required: false
+        default: ""
+
+      new-package-name:
+        description: |
+          Prebuilt mode only: new tarball filename if it changed.
+          Leave empty to keep PACKAGE_NAME unchanged.
+        type: string
+        required: false
+        default: ""
+
+      new-debian-version:
+        description: |
+          Prebuilt mode only: changelog version override.
+          Leave empty to auto-derive from PACKAGE_NAME.
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -28,6 +55,9 @@ jobs:
       qli-ci-ref: main
       debian-branch: ${{inputs.debian-branch}}
       upstream-tag: ${{inputs.upstream-tag}}
+      new-tag: ${{inputs.new-tag}}
+      new-package-name: ${{inputs.new-package-name}}
+      new-debian-version: ${{inputs.new-debian-version}}
       upstream-repo: ${{vars.UPSTREAM_REPO_GITHUB_NAME}}
     secrets:
       PAT: ${{secrets.DEB_PKG_BOT_CI_TOKEN}} # If the source repo is private, this secret is necessary to be provided in the repo

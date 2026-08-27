@@ -142,6 +142,13 @@ Post flow (always):
 - upsert PR comment (PR events)
 - `cleanup`
 
+Promotion workflow dispatch contract:
+
+- Source and prebuilt promotions both dispatch `.github/workflows/pkg-promote.yml`.
+- The reusable `pkg-promote` logic auto-detects mode from repository config
+  (`prebuild.conf`/`prebuilt.conf`/`upstream.conf`) and executes the matching
+  path.
+
 ## State Model
 
 Primary state file:

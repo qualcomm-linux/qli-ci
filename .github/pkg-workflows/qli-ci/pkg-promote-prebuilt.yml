@@ -1,4 +1,4 @@
-name: Promote Prebuilt
+name: Promote Prebuilt (Compatibility Wrapper)
 
 on:
   workflow_dispatch:
@@ -41,11 +41,14 @@ permissions:
 
 jobs:
   promote:
-    uses: qualcomm-linux/qli-ci/.github/workflows/pkg-promote-prebuilt-reusable-workflow.yml@main
+    uses: qualcomm-linux/qli-ci/.github/workflows/pkg-promote-reusable-workflow.yml@main
     with:
       qli-ci-ref: main
       debian-branch: ${{inputs.debian-branch}}
+      upstream-tag: ""
+      upstream-repo: ${{vars.UPSTREAM_REPO_GITHUB_NAME}}
       new-tag: ${{inputs.new-tag}}
       new-package-name: ${{inputs.new-package-name}}
       new-debian-version: ${{inputs.new-debian-version}}
-    secrets: inherit
+    secrets:
+      PAT: ${{secrets.DEB_PKG_BOT_CI_TOKEN}}

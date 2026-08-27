@@ -960,7 +960,7 @@ cmd_promote_tag() {
     new_package_name="$(prebuilt_package_name_for_tag "$tag")"
     new_debian_version="$(prebuilt_debian_version_for_tag "$tag")"
 
-    if ! dispatch_workflow_and_wait .github/workflows/pkg-promote-prebuilt.yml "$(state_get '.meta.temp_branch')" -f debian-branch="$lane_branch" -f new-tag="$tag" -f new-package-name="$new_package_name" -f new-debian-version="$new_debian_version"; then
+    if ! dispatch_workflow_and_wait .github/workflows/pkg-promote.yml "$(state_get '.meta.temp_branch')" -f debian-branch="$lane_branch" -f new-tag="$tag" -f new-package-name="$new_package_name" -f new-debian-version="$new_debian_version"; then
       set_tag_phase "$lane" "$tag" "promote" "failure" "$LAST_RUN_URL"
       mark_overall_failure "Promote (${mode}) failed for ${lane} ${tag}"
       return 1

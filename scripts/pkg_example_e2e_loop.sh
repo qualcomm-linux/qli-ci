@@ -736,15 +736,12 @@ cmd_prepare_temp_branch() {
     if [[ -f "${QLI_CI_ROOT}/.github/pkg-workflows/qli-ci/pkg-promote.yml" ]]; then
       cp "${QLI_CI_ROOT}/.github/pkg-workflows/qli-ci/pkg-promote.yml" .github/workflows/pkg-promote.yml
     fi
-    if [[ -f "${QLI_CI_ROOT}/.github/pkg-workflows/qli-ci/pkg-promote-prebuilt.yml" ]]; then
-      cp "${QLI_CI_ROOT}/.github/pkg-workflows/qli-ci/pkg-promote-prebuilt.yml" .github/workflows/pkg-promote-prebuilt.yml
-    fi
+    rm -f .github/workflows/pkg-promote-prebuilt.yml
 
     local files_to_patch=(
       .github/workflows/pkg-build.yml
       .github/workflows/pkg-promote.yml
       .github/workflows/pkg-release.yml
-      .github/workflows/pkg-promote-prebuilt.yml
       .github/workflows/pkg-pr-build-check.yml
       .github/workflows/pkg-pr-hook.yml
     )

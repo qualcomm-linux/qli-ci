@@ -13,6 +13,7 @@ BOT_TOKEN="${BOT_TOKEN:-}"
 ENABLE_DEBIAN_PATH_RAW="${ENABLE_DEBIAN_PATH:-1}"
 ENABLE_UBUNTU_PATH_RAW="${ENABLE_UBUNTU_PATH:-1}"
 PROMOTE_MODE="${PROMOTE_MODE:-source}"
+QLI_CI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 TAGS=("v1.0.0" "v1.1.0")
 PREBUILT_TAGS=("v1.0.0")
@@ -731,6 +732,13 @@ cmd_prepare_temp_branch() {
 
     git fetch origin "$PKG_BASE_REF" >/dev/null 2>&1
     git checkout -B "$temp_branch" "origin/$PKG_BASE_REF" >/dev/null 2>&1
+
+    if [[ -f "${QLI_CI_ROOT}/.github/pkg-workflows/qli-ci/pkg-promote.yml" ]]; then
+      cp "${QLI_CI_ROOT}/.github/pkg-workflows/qli-ci/pkg-promote.yml" .github/workflows/pkg-promote.yml
+    fi
+    if [[ -f "${QLI_CI_ROOT}/.github/pkg-workflows/qli-ci/pkg-promote-prebuilt.yml" ]]; then
+      cp "${QLI_CI_ROOT}/.github/pkg-workflows/qli-ci/pkg-promote-prebuilt.yml" .github/workflows/pkg-promote-prebuilt.yml
+    fi
 
     local files_to_patch=(
       .github/workflows/pkg-build.yml

@@ -4,12 +4,13 @@ Shared CI/workflow repository for Qualcomm Linux `pkg-*` package repositories.
 
 `qli-ci` is the split-out home for package reusable workflows and helper scripts
 that were historically maintained in `qcom-build-utils`.
+It is now the sole source of package lifecycle reusable workflows and package
+workflow templates for Qualcomm Linux `pkg-*` repositories.
 
 ## Repository Scope
 
 - Reusable package workflows under `.github/workflows/`
 - Package workflow templates under `.github/pkg-workflows/`
-- Debusine workflow stubs under `.github/pkg-workflows/debusine/`
 - Shared helper scripts under `scripts/`
 - End-to-end CI architecture documentation under `docs/`
 

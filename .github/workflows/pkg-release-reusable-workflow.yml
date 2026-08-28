@@ -49,6 +49,9 @@ on:
       QSC_API_KEY:
         description: QArtifactory API key used for Ubuntu apt upload.
         required: false
+      ARTIFACTORY_ACCESS_TOKEN:
+        description: Pre-issued Artifactory access token for Ubuntu apt upload. Mutually exclusive with QSC_API_KEY; when set, takes priority and QSC_API_KEY is not used.
+        required: false
 
 permissions:
   contents: read
@@ -475,12 +478,13 @@ jobs:
             fi
           done
 
-      - name: Require QArtifactory API key
+      - name: Require QArtifactory API key or access token
         env:
           QSC_API_KEY: ${{ secrets.QSC_API_KEY }}
+          ARTIFACTORY_ACCESS_TOKEN: ${{ secrets.ARTIFACTORY_ACCESS_TOKEN }}
         run: |
-          if [ -z "$QSC_API_KEY" ]; then
-            echo "QSC_API_KEY is required when publishing Ubuntu releases" >&2
+          if [ -z "$QSC_API_KEY" ] && [ -z "$ARTIFACTORY_ACCESS_TOKEN" ]; then
+            echo "One of QSC_API_KEY or ARTIFACTORY_ACCESS_TOKEN is required when publishing Ubuntu releases" >&2
             exit 1
           fi
 
@@ -507,7 +511,8 @@ jobs:
       - name: Upload to apt artifactory
         uses: qualcomm-linux/apt-artifactory-action/upload@main
         with:
-          qsc_api_key: ${{ secrets.QSC_API_KEY }}
+          qsc_api_key: ${{ secrets.ARTIFACTORY_ACCESS_TOKEN == '' && secrets.QSC_API_KEY || '' }}
+          access_token: ${{ secrets.ARTIFACTORY_ACCESS_TOKEN }}
           server_url: https://qartifactory.pe.jfrog.io
           target_base_repo: qsc-debian-local
           changes_path: ${{ steps.pre-upload.outputs.changes_path }}

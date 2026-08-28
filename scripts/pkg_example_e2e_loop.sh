@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+#
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
 set -uo pipefail
 
 STATE_FILE="${STATE_FILE:-/tmp/pkg-example-e2e-state.json}"

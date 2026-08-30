@@ -393,7 +393,7 @@ jobs:
 
       - name: Upload shared e2e state
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pkg-example-e2e-state-${{ github.run_id }}
           path: ${{ env.STATE_FILE }}
@@ -456,7 +456,7 @@ jobs:
       - name: Download shared e2e state
         id: download_state
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pkg-example-e2e-state-${{ github.run_id }}
           path: /tmp

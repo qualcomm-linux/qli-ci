@@ -17,9 +17,12 @@ that were historically maintained in `qcom-build-utils`.
 
 - `pkg-build-reusable-workflow.yml`
 - `pkg-promote-reusable-workflow.yml`
-- `pkg-promote-prebuilt-reusable-workflow.yml`
 - `pkg-release-reusable-workflow.yml`
 - `pkg-upstream-pr-build-reusable-workflow.yml`
+
+Compatibility wrapper (deprecated):
+
+- `pkg-promote-prebuilt-reusable-workflow.yml`
 
 ## Notes
 

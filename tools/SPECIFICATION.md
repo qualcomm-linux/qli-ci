@@ -1,8 +1,8 @@
 # Repository Configuration Specification
 
 This document specifies the required configuration state of a production
-`qualcomm-linux/pkg-*` GitHub repository for debusine-action workflows
-to function correctly. It covers repository state only; tooling used to
+`qualcomm-linux/pkg-*` GitHub repository for Debusine workflows to
+function correctly. It covers repository state only; tooling used to
 achieve or verify that state is not in scope. See README.md for details
 of that.
 

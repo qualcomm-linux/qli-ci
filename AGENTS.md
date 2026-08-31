@@ -5,6 +5,8 @@
 `qli-ci` is the shared workflow repository for Qualcomm Linux package repos.
 It is the split-out home for the package reusable workflows and helper scripts
 that were historically in `qcom-build-utils`.
+It is now the source of truth for package lifecycle reusable workflows and
+workflow templates consumed by `pkg-*` repositories.
 
 Primary scope:
 - reusable package workflows under `.github/workflows/`
@@ -82,6 +84,8 @@ transient branch (for example `debian/pr/*`), routing can fall back to
 - Do not introduce silent fallbacks for required credentials.
 - `DEB_PKG_BOT_CI_TOKEN` is required where reusable workflows/scripts clone
   internal repos or need write operations.
+- Do not use `qcom-build-utils-ref` in caller contracts; package callers should
+  target `qli-ci` reusable workflows directly.
 
 ## Important Workflows
 

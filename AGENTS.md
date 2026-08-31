@@ -12,6 +12,7 @@ Primary scope:
 - reusable package workflows under `.github/workflows/`
 - package workflow templates under `.github/pkg-workflows/`
 - shared helper scripts under `scripts/`
+- repository configuration tooling under `tools/`
 
 ## Current Build/Release Architecture
 

@@ -156,13 +156,24 @@ jobs:
             parse_resolved_values "$resolved_kv"
             source_ref="$normalized_ref"
           else
+            resolve_rc=$?
+            if [[ "$resolve_rc" -eq 2 ]]; then
+              echo "::error::Unsupported suite in debian-ref '$DEBIAN_REF_INPUT'. Allowed suites: debian={latest, unstable, sid, trixie, bookworm, forky}; ubuntu={noble, questing, resolute}."
+              exit 1
+            fi
+
             if [[ -n "$BASE_REF_INPUT" ]]; then
               if resolved_kv="$("$RESOLVER_SCRIPT" "$BASE_REF_INPUT")"; then
                 parse_resolved_values "$resolved_kv"
                 source_ref="$normalized_ref"
                 echo "::warning::debian-ref '$DEBIAN_REF_INPUT' does not end with '/<family>/<suite>'; falling back to base-ref '$BASE_REF_INPUT' for suite routing."
               else
-                echo "::error::Unable to resolve build target from debian-ref '$DEBIAN_REF_INPUT' or base-ref '$BASE_REF_INPUT'. Expected a branch ending in '/<family>/<suite>' (for example 'ubuntu/resolute' or 'qcom/ubuntu/resolute')."
+                base_resolve_rc=$?
+                if [[ "$base_resolve_rc" -eq 2 ]]; then
+                  echo "::error::Unsupported suite in base-ref '$BASE_REF_INPUT' while resolving build target for debian-ref '$DEBIAN_REF_INPUT'. Allowed suites: debian={latest, unstable, sid, trixie, bookworm, forky}; ubuntu={noble, questing, resolute}."
+                else
+                  echo "::error::Unable to resolve build target from debian-ref '$DEBIAN_REF_INPUT' or base-ref '$BASE_REF_INPUT'. Expected a branch ending in '/<family>/<suite>' (for example 'ubuntu/resolute' or 'qcom/ubuntu/resolute')."
+                fi
                 exit 1
               fi
             else

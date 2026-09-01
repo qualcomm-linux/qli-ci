@@ -5,6 +5,9 @@
 
 # Resolve distro family/suite from a branch-like ref.
 # The last two '/'-delimited fields are interpreted as "<family>/<suite>".
+# Exit codes:
+#   1 -> invalid branch shape/family
+#   2 -> unsupported suite for the resolved family
 
 set -euo pipefail
 
@@ -39,8 +42,25 @@ resolve_from_ref() {
   out_suite="${ref_parts[$((${#ref_parts[@]} - 1))]}"
 
   case "$out_family" in
-    debian|ubuntu)
-      return 0
+    debian)
+      case "$out_suite" in
+        latest|unstable|sid|trixie|bookworm|forky)
+          return 0
+          ;;
+        *)
+          return 2
+          ;;
+      esac
+      ;;
+    ubuntu)
+      case "$out_suite" in
+        noble|questing|resolute)
+          return 0
+          ;;
+        *)
+          return 2
+          ;;
+      esac
       ;;
     *)
       return 1
@@ -55,10 +75,18 @@ main() {
   fi
 
   local input_ref="$1"
-  local normalized_ref family suite
+  local normalized_ref family="" suite="" resolve_rc
 
   normalized_ref="$(normalize_ref "$input_ref")"
-  if ! resolve_from_ref "$normalized_ref" family suite; then
+  if resolve_from_ref "$normalized_ref" family suite; then
+    :
+  else
+    resolve_rc=$?
+    if (( resolve_rc == 2 )); then
+      echo "Unsupported suite '$suite' for family '$family' in ref '$normalized_ref'." >&2
+      echo "Allowed suites: debian={latest, unstable, sid, trixie, bookworm, forky}; ubuntu={noble, questing, resolute}." >&2
+      exit 2
+    fi
     exit 1
   fi
 

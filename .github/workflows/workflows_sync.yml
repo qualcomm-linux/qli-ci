@@ -1,6 +1,6 @@
 name: Workflows Sync
 description: |
-  Sync workflows from qli-ci/.github/pkg-workflows/** back to the
+  Sync workflows from qli-ci/pkg-workflows/** back to the
   Qualcomm package repositories.
 
 on:
@@ -187,7 +187,7 @@ jobs:
           echo "List of repositories starting with 'pkg-': $repos"
 
           # pkg-pr-hook.yml is checked out locally in pkg-workflows/debian/
-          DEBIAN_LATEST_WORKFLOW_FILE="$(pwd)/qli-ci/.github/pkg-workflows/debian/pkg-pr-hook.yml"
+          DEBIAN_LATEST_WORKFLOW_FILE="$(pwd)/qli-ci/pkg-workflows/debian/pkg-pr-hook.yml"
           DEBIAN_TARGET_WORKFLOW_FILE=".github/workflows/pkg-pr-hook.yml"
           DEBIAN_LEGACY_WORKFLOW_FILE=".github/workflows/pr-pre-post-merge.yml"
           LEGACY_UPSTREAM_HELPER_DIR=".github/TO_PASTE_IN_UPSTREAM_REPO"
@@ -291,7 +291,7 @@ jobs:
             fi
 
             # Remove legacy default-branch caller workflow names. New names are
-            # synced from .github/pkg-workflows/qli-ci/*.yml below.
+            # synced from pkg-workflows/qli-ci/*.yml below.
             for legacy_main_workflow in build-debian-package.yml promote-prebuilt.yml promote-upstream.yml release.yml; do
               legacy_main_path=".github/workflows/$legacy_main_workflow"
               if [[ -f "$legacy_main_path" ]]; then
@@ -310,7 +310,7 @@ jobs:
             fi
 
             # Compare and sync workflow files
-            for workflow in ../qli-ci/.github/pkg-workflows/qli-ci/*.yml; do
+            for workflow in ../qli-ci/pkg-workflows/qli-ci/*.yml; do
               workflow_name=$(basename "$workflow")
 
               target_workflow=".github/workflows/$workflow_name"
@@ -572,7 +572,7 @@ jobs:
                         create_or_reuse_pr \
                           "$repo" \
                           "chore: sync pkg-pr-hook from qli-ci" \
-                          "This PR syncs \`pkg-pr-hook.yml\` from qli-ci \`.github/pkg-workflows/debian/\`." \
+                          "This PR syncs \`pkg-pr-hook.yml\` from qli-ci \`pkg-workflows/debian/\`." \
                           "$debian_sync_branch" \
                           "$packaging_branch" || true
                       else

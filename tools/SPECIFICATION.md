@@ -161,6 +161,36 @@ The following secret must be set in the `Staging` environment:
 |--------------------------|-----------------------------------|
 | `DEBUSINE_RELEASE_TOKEN` | Debusine release operations token |
 
+## Packaging Branch Naming
+
+Every branch in the repository whose name has a path segment exactly
+equal to `debian` or `ubuntu` is a packaging branch, and must be named
+as either:
+
+- `<family>/<suite>`, or
+- `<prefix>/<family>/<suite>` (`prefix` may be any single path segment)
+
+where `family` is `debian` or `ubuntu`, and `suite` is one of that
+family's own valid suites:
+
+| Family   | Valid Suites                       |
+|----------|-------------------------------------|
+| `debian` | `trixie`, `latest`, `unstable`, `sid` |
+| `ubuntu` | `resolute`                          |
+
+For example, `qcom/debian/trixie` and `test/ubuntu/resolute` are valid;
+`debian/qcom-next` (a legacy name) and `qcom/ubuntu/resolute-backup` are
+not, because their suite does not appear in the list for their family.
+
+Transient promotion PR branches (e.g. `debian/pr/1.0.0-1`, created by
+`scripts/create_promotion_pr.py`) are exempt from this check: a literal
+`pr` path segment marks a branch as this different, expected kind,
+regardless of any `debian`/`ubuntu` segment also present.
+
+This check is report-only: renaming or removing a misnamed branch is a
+manual, repo-specific decision, not something this tooling does
+automatically.
+
 ## Workflow Files
 
 Workflow files must be present and be duplicates of the corresponding

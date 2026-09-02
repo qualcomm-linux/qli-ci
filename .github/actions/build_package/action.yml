@@ -231,13 +231,15 @@ runs:
 
         else
           # ℹ️ Source build mode.
-          # For packages with debian/watch (prebuilt binaries fetched from
-          # Artifactory), we mirror the debusine-action two-step approach:
+          # Packages with debian/watch: fetch the orig tarball via uscan, then
+          # let gbp pick it up with --git-tarball-dir instead of deriving it
+          # from git.
           #   1. Run uscan explicitly to fetch the upstream orig tarball.
           #      (dpkg-source --before-build calls uscan but does not reliably
           #      place the tarball where dpkg-source -b expects it in all envs.)
           #   2. Run gbp buildpackage -S to produce the .dsc, with
-          #      --git-no-create-orig so gbp does not overwrite the fetched tarball.
+          #      --git-tarball-dir so gbp places the fetched tarball correctly
+          #      even when debian/gbp.conf sets a custom export-dir.
           #   3. Pass the .dsc to sbuild for the binary build.
           # For packages without debian/watch, gbp creates the orig from git as usual.
           # Host Architecture: The architecture for which the binaries are being built (invariably arm64).
@@ -248,14 +250,10 @@ runs:
 
           git config --global --add safe.directory "$SRC_ABS"
 
-          # Only use the uscan fetch path for prebuilt binary packages that pull
-          # their upstream tarball from Artifactory. Packages with a watch file
-          # pointing to a git forge have their orig tarball created by gbp from
-          # the upstream git tag — the normal gbp path handles those correctly.
-          if [[ -f "./debian/watch" ]] && grep -q "qartifactory" "./debian/watch"; then
-            echo "ℹ️ debian/watch (Artifactory) found — fetching orig tarball via uscan"
+          if [[ -f "./debian/watch" ]]; then
+            echo "ℹ️ debian/watch found — fetching orig tarball via uscan"
             uscan --destdir "$WORK_DIR" --download-current-version
-            GBP_ORIG_FLAGS=(--git-no-create-orig)
+            GBP_ORIG_FLAGS=(--git-tarball-dir="$WORK_DIR" --git-compression=auto)
           else
             GBP_ORIG_FLAGS=()
           fi
@@ -272,8 +270,9 @@ runs:
             --source-option=--extend-diff-ignore=^\.github \
             -us -uc
 
-          DSC_FILE="${WORK_DIR}/${PKG}_${VER}.dsc"
-          [ -f "$DSC_FILE" ] || { echo "ERROR: .dsc not found after gbp buildpackage -S"; exit 1; }
+          # export-dir in debian/gbp.conf may place the .dsc outside WORK_DIR
+          DSC_FILE=$(find "$WORK_DIR" -maxdepth 3 -name "${PKG}_${VER}.dsc" 2>/dev/null | head -1)
+          [ -n "$DSC_FILE" ] || { echo "ERROR: .dsc not found after gbp buildpackage -S"; exit 1; }
           echo "ℹ️ Source package ready: $DSC_FILE"
 
           sbuild --no-clean-source \

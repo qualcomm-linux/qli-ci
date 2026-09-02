@@ -22,6 +22,9 @@
       "AXIOM_ENABLE_RELEASE": "false",
       "AXIOM_ENABLE_DAILY": "false"
     },
+    "required_present": [
+      "UPSTREAM_REPO_GITHUB_NAME"
+    ],
     "prohibited": [
       "DEBUSINE_PARENT_WORKSPACE"
     ]
@@ -30,6 +33,11 @@
     "DEB_PKG_BOT_CI_QSC_TOKEN",
     "DEB_PKG_BOT_CI_TOKEN"
   ],
+  "organization_variables": {
+    "DEB_PKG_BOT_CI_EMAIL": "githubservice@qti.qualcomm.com",
+    "DEB_PKG_BOT_CI_NAME": "GitHub Service Bot",
+    "DEB_PKG_BOT_CI_USERNAME": "qcom-service-bot"
+  },
   "environments": {
     "Production": {
       "protection": {

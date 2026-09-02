@@ -30,8 +30,60 @@ permissions:
   contents: read
 
 jobs:
+  check-relevant-changes:
+    name: Check relevant changes
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      relevant: ${{ steps.check.outputs.relevant }}
+    steps:
+      - name: Determine whether changed files warrant a run
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          # Manual dispatch is always an explicit request to run.
+          if [[ "${EVENT_NAME}" != "pull_request" ]]; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          files="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')"
+          echo "Changed files:"
+          echo "${files}"
+
+          relevant="false"
+          docs_only="true"
+          while IFS= read -r f; do
+            [[ -z "${f}" ]] && continue
+            if [[ "${f}" != *.md ]]; then
+              docs_only="false"
+            fi
+            if [[ "${f}" == .github/workflows/pkg-*-reusable-workflow.yml ]] \
+              || [[ "${f}" == scripts/* ]] \
+              || [[ "${f}" == pkg-workflows/* ]]; then
+              relevant="true"
+            fi
+          done <<< "${files}"
+
+          # Documentation-only changes never warrant a run, even if a
+          # matched path (e.g. a README under pkg-workflows/) triggered it.
+          if [[ "${docs_only}" == "true" ]]; then
+            relevant="false"
+          fi
+
+          echo "relevant=${relevant}" >> "$GITHUB_OUTPUT"
+
   global-lock:
     name: pkg-example e2e (global slot)
+    needs: [check-relevant-changes]
+    if: ${{ needs.check-relevant-changes.outputs.relevant == 'true' }}
     runs-on: ubuntu-latest
     concurrency:
       # Ensure only one pkg-example e2e run is active globally across all PRs.

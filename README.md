@@ -10,7 +10,7 @@ workflow templates for Qualcomm Linux `pkg-*` repositories.
 ## Repository Scope
 
 - Reusable package workflows under `.github/workflows/`
-- Package workflow templates under `.github/pkg-workflows/`
+- Package workflow templates under `pkg-workflows/`
 - Shared helper scripts under `scripts/`
 - End-to-end CI architecture documentation under `docs/`
 

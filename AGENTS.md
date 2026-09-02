@@ -10,7 +10,7 @@ workflow templates consumed by `pkg-*` repositories.
 
 Primary scope:
 - reusable package workflows under `.github/workflows/`
-- package workflow templates under `.github/pkg-workflows/`
+- package workflow templates under `pkg-workflows/`
 - shared helper scripts under `scripts/`
 
 ## Current Build/Release Architecture
@@ -99,6 +99,8 @@ transient branch (for example `debian/pr/*`), routing can fall back to
   - prebuilt promotion flow
 - `.github/workflows/pkg-upstream-pr-build-reusable-workflow.yml`
   - validate upstream PRs against Debian packaging build
+- `pkg-workflows/debusine/*`
+  - source Debusine stub workflows copied into managed `pkg-*` repos
 
 ## Important Debian/Debusine Helper Entrypoints
 
@@ -141,7 +143,7 @@ the test flow contract changes.
   workflows/scripts here.
 - Keep Debusine implementation details in `debusine-action` unless `qli-ci`
   orchestration must change.
-- When workflow contracts change, update templates under `.github/pkg-workflows/`
+- When workflow contracts change, update templates under `pkg-workflows/`
   and verify downstream in `pkg-example`.
 - Keep changes explicit and reviewable; avoid hidden behavior changes.
 

@@ -90,8 +90,15 @@ jobs:
           set -euo pipefail
 
           RESOLVER_SCRIPT="${GITHUB_WORKSPACE}/qli-ci/scripts/resolve_branch_family_suite.sh"
-          if ! resolved_kv="$("$RESOLVER_SCRIPT" "$DEBIAN_REF_INPUT")"; then
-            echo "::error::Unable to resolve release target from debian-branch '$DEBIAN_REF_INPUT'. Expected a branch ending in '/<family>/<suite>' (for example 'ubuntu/resolute' or 'qcom/ubuntu/resolute')."
+          if resolved_kv="$("$RESOLVER_SCRIPT" "$DEBIAN_REF_INPUT")"; then
+            :
+          else
+            resolve_rc=$?
+            if [[ "$resolve_rc" -eq 2 ]]; then
+              echo "::error::Unsupported suite in debian-branch '$DEBIAN_REF_INPUT'. Allowed suites: debian={latest, unstable, sid, trixie, bookworm, forky}; ubuntu={noble, questing, resolute}."
+            else
+              echo "::error::Unable to resolve release target from debian-branch '$DEBIAN_REF_INPUT'. Expected a branch ending in '/<family>/<suite>' (for example 'ubuntu/resolute' or 'qcom/ubuntu/resolute')."
+            fi
             exit 1
           fi
 

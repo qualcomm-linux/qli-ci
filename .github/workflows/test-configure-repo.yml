@@ -1,0 +1,28 @@
+name: Test configure-repo
+
+on:
+  pull_request:
+    paths:
+      - 'tools/**'
+  workflow_dispatch:
+
+jobs:
+  pkg-example-check:
+    name: Check pkg-example compliance
+    runs-on: ubuntu-latest
+    # Shares its group with pkg-example-e2e-loop.yml's job-level global
+    # lock, so the two workflows can never read/mutate pkg-example at the
+    # same time. This gives mutual exclusion, not "runs first" priority:
+    # GitHub Actions concurrency groups don't support scheduling priority,
+    # only serializing whichever runs land in the same group.
+    concurrency:
+      group: pkg-example-e2e-loop-global
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.QCOM_SERVICE_BOT_PKG_EXAMPLE_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Check pkg-example
+        run: ./tools/configure-repo --check --stage pkg-example

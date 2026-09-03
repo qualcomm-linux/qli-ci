@@ -5,6 +5,10 @@
     "visibility": "public",
     "custom_properties": {
       "is-pkg-repo": "true"
+    },
+    "test_pkg_exception": {
+      "variable": "IS_TEST_PKG",
+      "allowed_visibility": "internal"
     }
   },
   "host_profiles": {

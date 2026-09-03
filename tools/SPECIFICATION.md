@@ -13,6 +13,15 @@ it.
 
 ## Settings
 
+### Repository Visibility
+
+The repository must be `public`.
+
+The exception is a repository whose `IS_TEST_PKG` repository-level
+Actions variable is set to `true` (used for real by the pkg workflows
+to mark a repo as a test package, e.g. `pkg-example`): such a
+repository is allowed to be `internal` instead of `public`.
+
 ### General Repository Settings
 
 "Automatically delete head branches" (`delete_branch_on_merge`) must be

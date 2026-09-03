@@ -141,9 +141,9 @@ The tool will interactively prompt for each secret value.
 ### update-workflow-files
 
 Ensures that workflow files in each relevant branch of a `pkg-*`
-repository match the current state of
-`qli-ci/pkg-workflows/debusine/` in a branch of
-`qualcomm-linux/qli-ci` (default: `main`). Clones both repositories
+repository match the current state of `qli-ci/pkg-workflows/` in a
+branch of `qualcomm-linux/qli-ci` (default: `main`), per
+`repo-configs.json`'s `workflow_files` config. Clones both repositories
 into a temporary directory, compares files branch by branch, and pushes
 changes directly to each branch that needs updating.
 
@@ -157,8 +157,9 @@ changes directly to each branch that needs updating.
   expands to `qualcomm-linux/pkg-fastrpc`)
 - `branch ...`: Optional list of branches to process. When specified,
   only those branches are processed and auto-detection of packaging
-  branches is skipped. By default, processes `qli-ci` plus any packaging
-  branches present in the repository.
+  branches is skipped. By default, processes the default branch plus
+  any packaging branches present in the repository that match one of
+  `workflow_files`'s `packaging_branch_groups`.
 
 **Options:**
 - `--check`: Report what needs changing; commits are made locally but

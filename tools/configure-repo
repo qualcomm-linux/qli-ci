@@ -224,17 +224,34 @@ def configure_repository(repo: str, debusine_host: str, dry_run: bool, force: bo
     print(f"Using DEBUSINE_HOST: {debusine_host}")
     print()
 
+    variables = get_repo_variables(repo)
+
     # Prerequisite checks
     print("Checking repository prerequisites...")
     prereq_failures = False
 
     required_visibility = CONFIG["prerequisites"]["visibility"]
     repo_info = get_repo_info(repo)
-    if repo_info.get("visibility") != required_visibility:
-        print(f"❌ Repository is not {required_visibility} (visibility: {repo_info.get('visibility', 'unknown')})")
+    actual_visibility = repo_info.get("visibility")
+
+    test_pkg_exception = CONFIG["prerequisites"].get("test_pkg_exception")
+    is_test_pkg = bool(
+        test_pkg_exception and variables.get(test_pkg_exception["variable"]) == "true"
+    )
+    allowed_visibilities = {required_visibility}
+    if is_test_pkg:
+        allowed_visibilities.add(test_pkg_exception["allowed_visibility"])
+
+    if actual_visibility not in allowed_visibilities:
+        print(f"❌ Repository is not {required_visibility} (visibility: {actual_visibility or 'unknown'})")
         prereq_failures = True
-    else:
+    elif actual_visibility == required_visibility:
         print(f"✓ Repository is {required_visibility}")
+    else:
+        print(
+            f"✓ Repository is {actual_visibility} "
+            f"({test_pkg_exception['variable']}=true allows this)"
+        )
 
     props = get_repo_custom_properties(repo)
     for prop_name, expected_value in CONFIG["prerequisites"]["custom_properties"].items():
@@ -286,7 +303,6 @@ def configure_repository(repo: str, debusine_host: str, dry_run: bool, force: bo
 
     # 2. Check and set required variables
     print("Checking repository variables...")
-    variables = get_repo_variables(repo)
 
     required_vars = {
         "DEBUSINE_HOST": debusine_host,

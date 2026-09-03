@@ -61,6 +61,38 @@ repositories" with this repository selected:
 Granting visibility is an organization-level change that requires org
 admin access; this tooling can only verify and report it, not grant it.
 
+### Organization Variable Visibility
+
+The following organization-level Actions variables are managed
+centrally and must be visible to the repository with the exact values
+below — i.e. the variable's organization visibility setting must be
+"All repositories", or "Selected repositories" with this repository
+selected:
+
+| Variable                  | Required Value                    | Purpose                                                              |
+|----------------------------|-----------------------------------|-----------------------------------------------------------------------|
+| `DEB_PKG_BOT_CI_EMAIL`     | `githubservice@qti.qualcomm.com`  | Bot git commit/changelog author email used by qli-ci workflows       |
+| `DEB_PKG_BOT_CI_NAME`      | `GitHub Service Bot`              | Bot git commit/changelog author name used by qli-ci workflows        |
+| `DEB_PKG_BOT_CI_USERNAME`  | `qcom-service-bot`                | Bot GitHub username used by qli-ci workflows                         |
+
+Granting visibility and setting these values is an organization-level
+change that requires org admin access; this tooling can only verify and
+report it, not apply it.
+
+### Required Repository Variables (Presence Only)
+
+The following repository-level Actions variables must be set, to some
+value — unlike the required variables above, there is no single
+correct value to check or apply, since it's specific to each
+repository:
+
+| Variable                     | Purpose                                                    |
+|------------------------------|-------------------------------------------------------------|
+| `UPSTREAM_REPO_GITHUB_NAME`  | The upstream source repository this package is built from  |
+
+This is report-only: there is no fixed value this tooling could set,
+so a missing value must be set manually.
+
 ### GitHub Environment: Production
 
 A GitHub Actions environment named `Production` must exist with the

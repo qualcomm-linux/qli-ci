@@ -155,3 +155,22 @@ def get_user_id(username: str) -> int:
     stdout = run_gh_command(["api", f"users/{username}"])
     data = json.loads(stdout)
     return data["id"]
+
+
+def set_delete_branch_on_merge(repo: str, value: bool, dry_run: bool) -> None:
+    """Set the repository's 'automatically delete head branches' setting."""
+    if dry_run:
+        print(f"  Would set delete_branch_on_merge={value}")
+        return
+
+    run_gh_command(
+        [
+            "api",
+            f"repos/{repo}",
+            "-X",
+            "PATCH",
+            "-F",
+            f"delete_branch_on_merge={'true' if value else 'false'}",
+        ]
+    )
+

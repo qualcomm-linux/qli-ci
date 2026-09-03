@@ -45,6 +45,7 @@ from gh_helpers import (
     get_visible_org_secrets,
     get_visible_org_variables,
     run_gh_command,
+    set_delete_branch_on_merge,
     set_repo_variable,
 )
 
@@ -438,6 +439,29 @@ def configure_repository(repo: str, debusine_host: str, dry_run: bool, force: bo
     print("Checking rulesets...")
     if rulesets.check_rulesets(repo, CONFIG, dry_run):
         changes_needed = True
+
+    print()
+
+    # 9. Check delete-branch-on-merge setting
+    print("Checking delete-branch-on-merge setting...")
+    required_delete_branch_on_merge = CONFIG["delete_branch_on_merge"]
+    current_delete_branch_on_merge = repo_info.get("delete_branch_on_merge", False)
+    if current_delete_branch_on_merge != required_delete_branch_on_merge:
+        print(
+            f"❌ 'Automatically delete head branches' is "
+            f"{'enabled' if current_delete_branch_on_merge else 'disabled'}, must be "
+            f"{'enabled' if required_delete_branch_on_merge else 'disabled'}"
+        )
+        changes_needed = True
+        if not dry_run:
+            set_delete_branch_on_merge(repo, required_delete_branch_on_merge, dry_run)
+            print(
+                f"✓ Set 'Automatically delete head branches' to "
+                f"{'enabled' if required_delete_branch_on_merge else 'disabled'}"
+            )
+    else:
+        state = "enabled" if required_delete_branch_on_merge else "disabled"
+        print(f"✓ 'Automatically delete head branches' is {state}")
 
     print()
 

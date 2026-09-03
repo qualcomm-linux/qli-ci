@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Ensure workflow files in a pkg-* repository match the current state of
-pkg-workflows/debusine/ in a configurable branch (default: main) of
-qualcomm-linux/qli-ci.
+pkg-workflows/ in a configurable branch (default: main) of
+qualcomm-linux/qli-ci, per repo-configs.json's workflow_files config.
 """
 
 # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
@@ -14,48 +14,31 @@ qualcomm-linux/qli-ci.
 # this implementation into sync with it.
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import pygit2
 import github
 from github.PullRequest import PullRequest
 
+import pkg_branch_schema
+
 WORKFLOW_SOURCE_REPO = "qualcomm-linux/qli-ci"
 WORKFLOW_SOURCE_DEFAULT_BRANCH = "main"
-WORKFLOW_SOURCE_PATH = "pkg-workflows/debusine"
+WORKFLOW_SOURCE_PATH = "pkg-workflows"
 
-PACKAGING_BRANCH_ALLOWLIST = [
-    "qcom/debian/trixie",
-    "qcom/debian/latest",
-    "qli/debian/trixie",
-    "qli/debian/latest",
-    "qli-staging/debian/trixie",
-    "qli-staging/debian/latest",
-]
+CONFIG_PATH = Path(__file__).resolve().parent / "repo-configs.json"
+CONFIG: Dict[str, Any] = json.loads(CONFIG_PATH.read_text())
 
-DEFAULT_BRANCH_FILES = [
-    "debusine-daily.yml",
-    "debusine-pr-check.yml",
-    "debusine-pr-hook.yml",
-    "debusine-release.yml",
-    "README.debusine.md",
-]
-
-PACKAGING_BRANCH_FILES = [
-    "debusine-pr-hook.yml",
-    "debusine-release.yml",
-    "README.debusine.md",
-]
-
-PR_TITLE = "Update Debusine CI workflows"
+PR_TITLE = "Update managed workflow files"
 PR_BODY = (
     "Update workflow files to match current "
-    "`pkg-workflows/debusine/` in qualcomm-linux/qli-ci."
+    "`pkg-workflows/` in qualcomm-linux/qli-ci."
 )
 
 
@@ -86,11 +69,47 @@ def expand_repo_name(repo_name: str) -> str:
     return f"qualcomm-linux/{repo_name}"
 
 
-def get_expected_files(branch: str) -> List[str]:
-    """Return the list of expected workflow filenames for a given branch."""
-    if branch == "qli-ci":
-        return DEFAULT_BRANCH_FILES
-    return PACKAGING_BRANCH_FILES
+def resolve_packaging_branch_groups(
+    groups: List[Dict[str, Any]], existing_branches: Set[str], schema: Dict[str, Any]
+) -> List[Tuple[Set[str], List[str]]]:
+    """
+    Resolve each packaging_branch_groups entry's selector to the subset of
+    existing_branches it matches, paired with that group's files.
+    """
+    resolved = []
+    for group in groups:
+        selector = group["selector"]
+        if selector["type"] == "fixed":
+            branches = set(selector["branches"]) & existing_branches
+        elif selector["type"] == "schema":
+            pattern = pkg_branch_schema.build_packaging_branch_pattern(schema)
+            branches = {b for b in existing_branches if pattern.match(b)}
+        else:
+            raise CLIError(f"unknown packaging branch group selector type: {selector['type']!r}")
+        resolved.append((branches, group["files"]))
+    return resolved
+
+
+def get_expected_files(
+    branch: str,
+    default_branch: str,
+    workflow_files: Dict[str, Any],
+    resolved_groups: List[Tuple[Set[str], List[str]]],
+) -> List[str]:
+    """
+    Return the list of expected workflow filenames for a given branch: the
+    default-branch file set if this is the default branch, plus every
+    packaging branch group's files where this branch is in that group's
+    resolved set. A branch can match more than one group at once, so files
+    accumulate rather than being exclusive.
+    """
+    files = []
+    if branch == default_branch:
+        files.extend(workflow_files["default_branch"])
+    for branches, group_files in resolved_groups:
+        if branch in branches:
+            files.extend(group_files)
+    return files
 
 
 def chore_branch_name(target_branch: str) -> str:
@@ -170,6 +189,9 @@ def process_branch(
     pkg_repo: pygit2.Repository,
     pkg_workdir: Path,
     source_dir: Path,
+    default_branch: str,
+    workflow_files: Dict[str, Any],
+    resolved_groups: List[Tuple[Set[str], List[str]]],
     gh_repo,
     callbacks: pygit2.RemoteCallbacks,
     dry_run: bool,
@@ -179,7 +201,7 @@ def process_branch(
     Process a single branch. Returns True if a change was needed or made.
     Raises SystemExit on unrecoverable error.
     """
-    files = get_expected_files(target_branch)
+    files = get_expected_files(target_branch, default_branch, workflow_files, resolved_groups)
 
     checkout_remote_branch(pkg_repo, target_branch)
 
@@ -210,7 +232,7 @@ def process_branch(
         "HEAD",
         sig,
         sig,
-        "Update Debusine CI workflows",
+        "Update managed workflow files",
         tree_oid,
         [pkg_repo.head.target],
     )
@@ -248,7 +270,7 @@ def process_branch(
         )
         print(f"✓ {target_branch}: PR created")
     else:
-        open_pr.create_issue_comment("Branch updated with latest Debusine CI workflows.")
+        open_pr.create_issue_comment("Branch updated with latest managed workflow files.")
         print(f"✓ {target_branch}: commented on existing PR #{open_pr.number}")
 
     return True
@@ -298,7 +320,8 @@ def main() -> None:
         "branches",
         nargs="*",
         metavar="branch",
-        help="branches to process (default: qli-ci plus any packaging branches present in the repo)",
+        help="branches to process (default: the default branch plus any packaging "
+             "branches present in the repo)",
     )
     parsed = parser.parse_args()
     repo_name = parsed.repo_name
@@ -323,8 +346,12 @@ def main() -> None:
 
     changes = False
 
+    workflow_files = CONFIG["workflow_files"]
+    default_branch = CONFIG["default_branch"]
+    packaging_branch_schema = CONFIG["packaging_branch_schema"]
+
     with tempfile.TemporaryDirectory(
-        prefix=f"debusine-wf-{repo_name}-", delete=not no_clean
+        prefix=f"workflow-files-{repo_name}-", delete=not no_clean
     ) as tmpdir:
         tmppath = Path(tmpdir)
 
@@ -366,30 +393,27 @@ def main() -> None:
 
         gh_repo = gh.get_repo(full_repo)
 
+        existing_branches = {
+            ref.removeprefix("refs/remotes/origin/")
+            for ref in pkg_repo.references
+            if ref.startswith("refs/remotes/origin/") and ref != "refs/remotes/origin/HEAD"
+        }
+        resolved_groups = resolve_packaging_branch_groups(
+            workflow_files["packaging_branch_groups"], existing_branches, packaging_branch_schema
+        )
+        managed_branches = {default_branch}
+        for branches, _files in resolved_groups:
+            managed_branches |= branches
+
         if explicit_branches:
             all_branches = explicit_branches
         else:
-            # Verify qli-ci branch exists
-            try:
-                pkg_repo.lookup_reference("refs/remotes/origin/qli-ci")
-            except KeyError:
-                raise CLIError(f"branch 'qli-ci' does not exist in {full_repo}")
-
-            debian_branches = sorted(
-                ref.removeprefix("refs/remotes/origin/")
-                for ref in pkg_repo.references
-                if ref.removeprefix("refs/remotes/origin/") in PACKAGING_BRANCH_ALLOWLIST
-            )
-            all_branches = ["qli-ci"] + debian_branches
+            if default_branch not in existing_branches:
+                raise CLIError(f"branch {default_branch!r} does not exist in {full_repo}")
+            all_branches = [default_branch] + sorted(managed_branches - {default_branch})
 
         if source_branch != WORKFLOW_SOURCE_DEFAULT_BRANCH and repo_name.startswith("pkg-"):
-            managed = {"qli-ci"} | set(PACKAGING_BRANCH_ALLOWLIST)
-            default_set = {
-                ref.removeprefix("refs/remotes/origin/")
-                for ref in pkg_repo.references
-                if ref.removeprefix("refs/remotes/origin/") in managed
-            }
-            overlap = sorted(set(all_branches) & default_set)
+            overlap = sorted(set(all_branches) & managed_branches)
             if overlap:
                 raise CLIError(
                     "--debug-source-branch cannot be used on a pkg- repository when any branch "
@@ -407,6 +431,9 @@ def main() -> None:
                     pkg_repo,
                     pkg_workdir,
                     source_dir,
+                    default_branch,
+                    workflow_files,
+                    resolved_groups,
                     gh_repo,
                     callbacks,
                     dry_run,

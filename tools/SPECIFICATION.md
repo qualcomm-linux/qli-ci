@@ -13,6 +13,12 @@ it.
 
 ## Settings
 
+### General Repository Settings
+
+"Automatically delete head branches" (`delete_branch_on_merge`) must be
+enabled, so that branches are cleaned up automatically once their pull
+request is merged, avoiding branch pollution.
+
 ### GitHub Actions Variables
 
 The following repository-level Actions variables must be set:

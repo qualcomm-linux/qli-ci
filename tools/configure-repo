@@ -30,6 +30,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
+import rulesets
 from gh_helpers import (
     check_gh_auth,
     create_environment,
@@ -430,6 +431,13 @@ def configure_repository(repo: str, debusine_host: str, dry_run: bool, force: bo
             changes_needed = True
     if not packaging_branches_found:
         print("✓ No packaging branches found")
+
+    print()
+
+    # 8. Check rulesets
+    print("Checking rulesets...")
+    if rulesets.check_rulesets(repo, CONFIG, dry_run):
+        changes_needed = True
 
     print()
 

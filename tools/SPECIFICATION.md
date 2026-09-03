@@ -161,6 +161,47 @@ The following secret must be set in the `Staging` environment:
 |--------------------------|-----------------------------------|
 | `DEBUSINE_RELEASE_TOKEN` | Debusine release operations token |
 
+## Repository Rulesets
+
+Two GitHub repository rulesets, targeting branches, must exist:
+
+### Ruleset: `pkg branches`
+
+Targets every packaging branch matching the schema in [Packaging Branch
+Naming](#packaging-branch-naming) above (both shapes, across all
+family/suite combinations). Must be `Active` and configured with:
+
+- Restrict force pushes (blocks non-fast-forward updates).
+- Require a pull request before merging.
+- Require the `PR Build / Test` status check to pass, with branches
+  required to be up to date before merging, and "Do not require status
+  checks on creation" enabled.
+
+Merge methods are unrestricted.
+
+### Ruleset: `default branch`
+
+Targets only the repository's default branch (`qli-ci`). Must be `Active`
+and configured with:
+
+- Require a pull request before merging.
+
+Merge methods are unrestricted.
+
+### Bypass Exception
+
+Both rulesets must include a bypass exception for the `qcom-service-bot`
+user account, covering all of that ruleset's rules (not just the pull
+request requirement), so that this bot's direct-push sync automation
+(e.g. `update-workflow-files`'s direct-push mode) continues to work.
+
+### Other Rulesets
+
+A repository may have other rulesets, under other names, created outside
+this tooling (e.g. ad hoc pre-merge test rulesets). Those are left
+untouched: only rulesets named exactly `pkg branches` and `default branch`
+are managed.
+
 ## Packaging Branch Naming
 
 Every branch in the repository whose name has a path segment exactly

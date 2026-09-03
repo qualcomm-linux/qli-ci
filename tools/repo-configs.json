@@ -51,6 +51,51 @@
       "*/family/suite"
     ]
   },
+  "rulesets": {
+    "pkg branches": {
+      "target_branches": "packaging_branch_schema",
+      "enforcement": "active",
+      "bypass_actors": [
+        {
+          "type": "user",
+          "login": "qcom-service-bot",
+          "bypass_mode": "always"
+        }
+      ],
+      "rules": {
+        "non_fast_forward": {},
+        "pull_request": {
+          "required_approving_review_count": 0
+        },
+        "required_status_checks": {
+          "strict_required_status_checks_policy": true,
+          "do_not_enforce_on_create": true,
+          "required_status_checks": [
+            {
+              "context": "PR Build / Test",
+              "integration_id": 15368
+            }
+          ]
+        }
+      }
+    },
+    "default branch": {
+      "target_branches": "default_branch",
+      "enforcement": "active",
+      "bypass_actors": [
+        {
+          "type": "user",
+          "login": "qcom-service-bot",
+          "bypass_mode": "always"
+        }
+      ],
+      "rules": {
+        "pull_request": {
+          "required_approving_review_count": 0
+        }
+      }
+    }
+  },
   "environments": {
     "Production": {
       "protection": {

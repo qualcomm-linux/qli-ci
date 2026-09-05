@@ -197,14 +197,27 @@ To avoid stale duplicate PR Build runs:
 Release runs can pause on environment approvals, including:
 
 - `Axiom` (AXIOM check gate)
-- `pkg-release-approval` (release gate)
+- `pkg-release-approval` (Debian release gate; also the Ubuntu release gate
+  fallback — see below)
+- `Ubuntu Production` (Ubuntu release gate, when configured on the calling
+  repo)
+
+The Ubuntu release job's environment is resolved dynamically per run: the
+`prepare-release-source` job probes the calling repo for an `Ubuntu
+Production` environment and uses it if present, otherwise falls back to
+`pkg-release-approval`. This is a transitional mechanism — once every pkg-*
+repo has migrated to `Ubuntu Production`, the fallback and the detection
+step should be removed and the job should hardcode `Ubuntu Production`.
 
 e2e release wait behavior:
 
 - while waiting on a release run, script polls
   `/actions/runs/<id>/pending_deployments`
 - it auto-approves environments where `current_user_can_approve == true`
-  using `DEB_PKG_BOT_CI_TOKEN`
+  using `DEB_PKG_BOT_CI_TOKEN` — this is environment-id based, so it
+  transparently approves whichever of `Ubuntu Production` or
+  `pkg-release-approval` the run actually paused on, with no script changes
+  needed as repos migrate
 
 Environment policy requirement:
 

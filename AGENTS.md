@@ -25,8 +25,10 @@ Primary scope:
   - Ubuntu codenames (`noble`, `questing`, `resolute`, and similar targets)
     use the local `pkg-builder` path with `qli-ci` composite actions.
 - Ubuntu release path prepares release state, reuses the build artifacts, gates
-  on environment `pkg-release-approval`, then pushes git state and uploads
-  artifacts to apt artifactory.
+  on environment `Ubuntu Production` when the calling repo has configured it,
+  falling back to `pkg-release-approval` otherwise, then pushes git state and
+  uploads artifacts to apt artifactory. See "Release Approval Gates" in
+  `docs/TESTS.instructions.md` for the transition detail.
 - Debian-path helper entrypoints come from checked-out
   `debusine-action/lib/`:
   - `prepare-release`

@@ -205,7 +205,7 @@ def process_branch(
         index.add(f".github/workflows/{filename}")
     index.write()
     tree_oid = index.write_tree()
-    sig = pygit2.Signature("debusine-action pkg-management", "noreply@github.com")
+    sig = pygit2.Signature("qli-ci pkg-management", "noreply@github.com")
     pkg_repo.create_commit(
         "HEAD",
         sig,

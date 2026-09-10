@@ -1,7 +1,7 @@
 # Repository Configuration Tools
 
 This directory contains tools for configuring GitHub repositories to
-work with the debusine-action reusable workflows.
+work with Debusine workflows managed from qli-ci.
 
 ## Specification
 
@@ -51,7 +51,7 @@ does and the options available when running them separately.
 ### configure-repo
 
 Configures a GitHub repository with the required settings for
-debusine-action workflows.
+Debusine workflows.
 
 **Usage:**
 ```bash
@@ -94,7 +94,7 @@ reported, without blocking the rest of what this tool configures.
 ### set-repo-secrets
 
 Sets the required secret *values* for a GitHub repository used by
-debusine-action workflows (as opposed to `configure-repo`, which
+Debusine workflows (as opposed to `configure-repo`, which
 handles GitHub-side settings and ACLs, including organization secret
 visibility, without ever needing to know a secret's value).
 

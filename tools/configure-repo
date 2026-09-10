@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Configure a GitHub repository with required settings for debusine-action workflows.
+Configure a GitHub repository with required settings for Debusine workflows.
 
 Usage:
     configure-repo [--check] [--force] [--production | --stage] <repo-name>

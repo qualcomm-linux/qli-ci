@@ -250,26 +250,39 @@ automatically.
 ## Workflow Files
 
 Workflow files must be present and be duplicates of the corresponding
-files that are in `pkg-workflows/debusine/` in the main branch
-of the qualcomm-linux/qli-ci repository as follows:
+files that are in `pkg-workflows/` in the main branch of the
+qualcomm-linux/qli-ci repository, per `workflow_files` in
+`repo-configs.json`, as follows:
 
 ### Default Branch
 
 The default branch must be named `qli-ci` and contain the following in
 `.github/workflows/`:
 
-| File                    |
-|-------------------------|
-| `debusine-daily.yml`    |
-| `debusine-pr-check.yml` |
-| `debusine-pr-hook.yml`  |
-| `debusine-release.yml`  |
-| `README.debusine.md`    |
+| File                        |
+|-----------------------------|
+| `debusine-daily.yml`        |
+| `debusine-pr-check.yml`     |
+| `debusine-pr-hook.yml`      |
+| `debusine-release.yml`      |
+| `README.debusine.md`        |
+| `pkg-build.yml`             |
+| `pkg-pr-hook.yml`           |
+| `pkg-promote-prebuilt.yml`  |
+| `pkg-promote.yml`           |
+| `pkg-release.yml`           |
 
-### Each Packaging Branch
+### Packaging Branches
 
-The following packaging branches are managed. They do not need to exist,
-but if they do, they must contain the following in `.github/workflows/`:
+Two independent rules govern which files a packaging branch must
+contain. A branch may be subject to both at once (for example,
+`qcom/debian/trixie` matches both).
+
+#### Debusine Files (Fixed Allowlist)
+
+The following packaging branches are managed. They do not need to
+exist, but if they do, they must contain the following in
+`.github/workflows/`:
 
 - `qcom/debian/trixie`
 - `qcom/debian/latest`
@@ -284,4 +297,14 @@ but if they do, they must contain the following in `.github/workflows/`:
 | `debusine-release.yml`  |
 | `README.debusine.md`    |
 
-No other packaging branches are managed.
+No other packaging branches carry these files. This set is
+intentionally fixed and Debian-only, independent of the general
+packaging branch naming schema below — Debusine support is
+Debian-only by design.
+
+#### `pkg-pr-hook.yml` (Naming-Schema-Derived)
+
+Every packaging branch matching the naming schema in [Packaging Branch
+Naming](#packaging-branch-naming) above (both the `debian` and
+`ubuntu` families) must contain `pkg-pr-hook.yml` in
+`.github/workflows/`.

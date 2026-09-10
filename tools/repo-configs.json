@@ -101,6 +101,48 @@
       }
     }
   },
+  "workflow_files": {
+    "default_branch": [
+      "debusine-daily.yml",
+      "debusine-pr-check.yml",
+      "debusine-pr-hook.yml",
+      "debusine-release.yml",
+      "README.debusine.md",
+      "pkg-build.yml",
+      "pkg-pr-hook.yml",
+      "pkg-promote-prebuilt.yml",
+      "pkg-promote.yml",
+      "pkg-release.yml"
+    ],
+    "packaging_branch_groups": [
+      {
+        "selector": {
+          "type": "fixed",
+          "branches": [
+            "qcom/debian/trixie",
+            "qcom/debian/latest",
+            "qli/debian/trixie",
+            "qli/debian/latest",
+            "qli-staging/debian/trixie",
+            "qli-staging/debian/latest"
+          ]
+        },
+        "files": [
+          "debusine-pr-hook.yml",
+          "debusine-release.yml",
+          "README.debusine.md"
+        ]
+      },
+      {
+        "selector": {
+          "type": "schema"
+        },
+        "files": [
+          "pkg-pr-hook.yml"
+        ]
+      }
+    ]
+  },
   "environments": {
     "Production": {
       "protection": {

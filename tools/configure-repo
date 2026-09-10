@@ -24,12 +24,12 @@ Options:
 # it.
 
 import json
-import re
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List
 
+import pkg_branch_schema
 import rulesets
 from gh_helpers import (
     check_gh_auth,
@@ -59,54 +59,6 @@ CONFIG: Dict[str, Any] = json.loads(CONFIG_PATH.read_text())
 DEFAULT_ENVIRONMENT = "production"
 
 
-def build_packaging_branch_pattern(schema: Dict[str, Any]) -> re.Pattern:
-    """
-    Build the compiled regex matching valid packaging branch names from a
-    packaging_branch_schema config. Each entry in schema["shapes"] is a
-    '/'-joined template: the literal pair 'family/suite' expands to an
-    alternation over schema["families"] (suite must belong to its own
-    family), and '*' matches any single path segment (e.g. an arbitrary
-    prefix). This lets the branch name shape itself change via config,
-    without touching this code.
-    """
-    families = schema["families"]
-    family_suite_alternation = "|".join(
-        f"{re.escape(family)}/(?:{'|'.join(re.escape(suite) for suite in suites)})"
-        for family, suites in families.items()
-    )
-
-    shape_patterns = []
-    for shape in schema["shapes"]:
-        segments = shape.split("/")
-        parts = []
-        i = 0
-        while i < len(segments):
-            if segments[i:i + 2] == ["family", "suite"]:
-                parts.append(f"(?:{family_suite_alternation})")
-                i += 2
-            elif segments[i] == "*":
-                parts.append("[^/]+")
-                i += 1
-            else:
-                raise ValueError(f"unknown packaging branch shape segment: {segments[i]!r}")
-        shape_patterns.append("/".join(parts))
-
-    return re.compile(rf"^(?:{'|'.join(shape_patterns)})$")
-
-
-def is_packaging_branch_attempt(branch_name: str, families: Dict[str, List[str]]) -> bool:
-    """
-    A branch is treated as a packaging branch attempt (and therefore subject
-    to the naming schema) if any of its path segments names a known family,
-    regardless of position or suite validity - except transient promotion PR
-    branches (e.g. debian/pr/1.0.0-1, created by scripts/create_promotion_pr.py),
-    identified by a literal 'pr' path segment, which are a different, expected
-    kind of branch and were never meant to conform to this schema.
-    """
-    segments = branch_name.split("/")
-    if "pr" in segments:
-        return False
-    return any(segment in families for segment in segments)
 
 
 def ensure_required_reviewers(
@@ -435,10 +387,10 @@ def configure_repository(repo: str, debusine_host: str, dry_run: bool, force: bo
     print("Checking packaging branch naming...")
     packaging_branch_schema = CONFIG["packaging_branch_schema"]
     families = packaging_branch_schema["families"]
-    pattern = build_packaging_branch_pattern(packaging_branch_schema)
+    pattern = pkg_branch_schema.build_packaging_branch_pattern(packaging_branch_schema)
     packaging_branches_found = False
     for branch_name in get_repo_branches(repo):
-        if not is_packaging_branch_attempt(branch_name, families):
+        if not pkg_branch_schema.is_packaging_branch_attempt(branch_name, families):
             continue
         packaging_branches_found = True
         if pattern.match(branch_name):

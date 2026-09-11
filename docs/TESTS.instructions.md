@@ -111,7 +111,7 @@ Current behavior:
     `AXIOM_ENABLE == 'true'`.
 
 When `AXIOM_ENABLE` is `false`, AXIOM stages are skipped and Ubuntu release
-keeps only the normal `pkg-release-approval` environment gate.
+keeps only the normal `Ubuntu Production` environment gate.
 
 ## Operational Flow
 
@@ -197,7 +197,8 @@ To avoid stale duplicate PR Build runs:
 Release runs can pause on environment approvals, including:
 
 - `Axiom` (AXIOM check gate)
-- `pkg-release-approval` (release gate)
+- `Production` (Debian release gate)
+- `Ubuntu Production` (Ubuntu release gate)
 
 e2e release wait behavior:
 

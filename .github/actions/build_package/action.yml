@@ -232,7 +232,8 @@ runs:
         else
           # ℹ️ Source build mode.
           # For packages with debian/watch (prebuilt binaries fetched from
-          # Artifactory), we mirror the debusine-action two-step approach:
+          # Artifactory or the software center), we mirror the debusine-action
+          # two-step approach:
           #   1. Run uscan explicitly to fetch the upstream orig tarball.
           #      (dpkg-source --before-build calls uscan but does not reliably
           #      place the tarball where dpkg-source -b expects it in all envs.)
@@ -249,11 +250,12 @@ runs:
           git config --global --add safe.directory "$SRC_ABS"
 
           # Only use the uscan fetch path for prebuilt binary packages that pull
-          # their upstream tarball from Artifactory. Packages with a watch file
+          # their upstream tarball from an internal Qualcomm asset host
+          # (Artifactory or the software center). Packages with a watch file
           # pointing to a git forge have their orig tarball created by gbp from
           # the upstream git tag — the normal gbp path handles those correctly.
-          if [[ -f "./debian/watch" ]] && grep -q "qartifactory" "./debian/watch"; then
-            echo "ℹ️ debian/watch (Artifactory) found — fetching orig tarball via uscan"
+          if [[ -f "./debian/watch" ]] && grep -qE "qartifactory|softwarecenter\.qualcomm\.com" "./debian/watch"; then
+            echo "ℹ️ debian/watch (Artifactory/Software Center) found — fetching orig tarball via uscan"
             uscan --destdir "$WORK_DIR" --download-current-version
             GBP_ORIG_FLAGS=(--git-no-create-orig)
           else

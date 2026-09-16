@@ -1,0 +1,1 @@
+This temporary orphan branch exists to provide ubuntu-archive-keyring.gpg from a stable URL to bootstrap Ubuntu builds into qli-ci. We will switch to internal provisioning soon, at which point this branch will no longer be necessary.

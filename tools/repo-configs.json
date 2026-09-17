@@ -1,0 +1,69 @@
+{
+  "default_branch": "qli-ci",
+  "prerequisites": {
+    "visibility": "public",
+    "custom_properties": {
+      "is-pkg-repo": "true"
+    }
+  },
+  "host_profiles": {
+    "production": {
+      "DEBUSINE_HOST": "debusine.qualcomm.com"
+    },
+    "stage": {
+      "DEBUSINE_HOST": "stage.debusine.qualcomm.com"
+    }
+  },
+  "variables": {
+    "required": {
+      "DEBUSINE_SCOPE": "qualcomm",
+      "AXIOM_ENABLE": "false",
+      "AXIOM_ENABLE_PR": "false",
+      "AXIOM_ENABLE_RELEASE": "false",
+      "AXIOM_ENABLE_DAILY": "false"
+    },
+    "prohibited": [
+      "DEBUSINE_PARENT_WORKSPACE"
+    ]
+  },
+  "environments": {
+    "Production": {
+      "protection": {
+        "type": "required_reviewers",
+        "reviewers": [
+          "basak-qcom",
+          "gagath",
+          "lool",
+          "obbardc",
+          "slyon"
+        ],
+        "allow_admin_bypass": false
+      }
+    },
+    "Ubuntu Production": {
+      "protection": {
+        "type": "required_reviewers",
+        "reviewers": [
+          "abickett",
+          "bjordiscollaku",
+          "keerthi-go"
+        ],
+        "allow_admin_bypass": false
+      }
+    },
+    "Axiom": {
+      "protection": {
+        "type": "required_reviewers",
+        "reviewers": [
+          "qcom-service-bot"
+        ],
+        "allow_admin_bypass": false
+      }
+    },
+    "Staging": {
+      "protection": {
+        "type": "none"
+      }
+    }
+  }
+}

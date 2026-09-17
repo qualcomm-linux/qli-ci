@@ -39,12 +39,6 @@ CONFIG: Dict[str, Any] = json.loads(CONFIG_PATH.read_text())
 # Default host profile - change this constant to swap the default
 DEFAULT_ENVIRONMENT = "production"
 
-# Organization-level secrets that must be visible to the repository. This
-# tool grants access automatically if the caller's own gh auth carries the
-# admin:org scope; otherwise granting fails and is reported, since that
-# requires org admin access this tool may not have.
-REQUIRED_ORG_SECRETS = ["DEB_PKG_BOT_CI_QSC_TOKEN", "DEB_PKG_BOT_CI_TOKEN"]
-
 
 def run_gh_command(args: List[str]) -> str:
     """Run a gh CLI command and return stdout. Raises CalledProcessError on failure."""
@@ -457,7 +451,7 @@ def configure_repository(repo: str, debusine_host: str, dry_run: bool, force: bo
     # 5. Check organization secret visibility
     print("Checking organization secret visibility...")
     visible_org_secrets = get_visible_org_secrets(repo)
-    for secret_name in REQUIRED_ORG_SECRETS:
+    for secret_name in CONFIG["organization_secrets"]:
         if secret_name in visible_org_secrets:
             print(f"✓ Organization secret '{secret_name}' is visible to this repository")
             continue

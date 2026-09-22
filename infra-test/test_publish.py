@@ -13,8 +13,7 @@ import requests
 from helpers import (
     check_apt_authenticated,
     check_apt_unauthenticated,
-    fetch_packages_xz,
-    find_package_in_index,
+    fetch_package_stanza,
     verify_inrelease_signature,
 )
 
@@ -58,8 +57,7 @@ def test_apt_target_packages_contains_pkg(publish_result):
     suite = publish_result["suite"]
     component = publish_result["component"]
     url_base = f"{publish_result['apt_url_base']}/dists/{suite}/{component}/binary-all"
-    content = fetch_packages_xz(url_base)
-    stanza = find_package_in_index(content, publish_result["pkg_name"])
+    stanza = fetch_package_stanza(url_base, publish_result["pkg_name"])
     assert stanza is not None, (
         f"Package {publish_result['pkg_name']!r} not found in {url_base}/Packages.xz"
     )
@@ -70,9 +68,8 @@ def test_apt_target_deb_available(publish_result):
     suite = publish_result["suite"]
     component = publish_result["component"]
     url_base = f"{publish_result['apt_url_base']}/dists/{suite}/{component}/binary-all"
-    content = fetch_packages_xz(url_base)
 
-    stanza = find_package_in_index(content, publish_result["pkg_name"])
+    stanza = fetch_package_stanza(url_base, publish_result["pkg_name"])
     assert stanza is not None, (
         f"Package {publish_result['pkg_name']!r} not found in Packages index at {url_base}/Packages.xz"
     )

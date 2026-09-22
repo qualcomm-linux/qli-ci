@@ -12,8 +12,7 @@ import requests.auth
 from helpers import (
     check_apt_authenticated,
     check_apt_unauthenticated,
-    fetch_packages_xz,
-    find_package_in_index,
+    fetch_package_stanza,
     head_url,
     verify_inrelease_signature,
 )
@@ -70,8 +69,7 @@ def test_apt_child_packages_contains_pkg(creds, build_result):
     component = build_result["component"]
     url_base = f"{build_result['apt_url_base']}/dists/{suite}/{component}/binary-all"
     auth = requests.auth.HTTPBasicAuth(creds["user"], creds["token"])
-    content = fetch_packages_xz(url_base, auth=auth)
-    stanza = find_package_in_index(content, build_result["pkg_name"])
+    stanza = fetch_package_stanza(url_base, build_result["pkg_name"], auth=auth)
     assert stanza is not None, (
         f"Package {build_result['pkg_name']!r} not found in {url_base}/Packages.xz"
     )
@@ -83,9 +81,8 @@ def test_apt_child_deb_available(creds, build_result):
     component = build_result["component"]
     url_base = f"{build_result['apt_url_base']}/dists/{suite}/{component}/binary-all"
     auth = requests.auth.HTTPBasicAuth(creds["user"], creds["token"])
-    content = fetch_packages_xz(url_base, auth=auth)
 
-    stanza = find_package_in_index(content, build_result["pkg_name"])
+    stanza = fetch_package_stanza(url_base, build_result["pkg_name"], auth=auth)
     assert stanza is not None, (
         f"Package {build_result['pkg_name']!r} not found in Packages index"
     )

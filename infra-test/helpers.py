@@ -148,14 +148,45 @@ def check_apt_unauthenticated(url: str) -> requests.Response:
     return requests.get(url, timeout=30)
 
 
-def fetch_packages_xz(url_base: str, auth: requests.auth.HTTPBasicAuth | None = None) -> str:
+def fetch_packages_xz(
+    url_base: str,
+    auth: requests.auth.HTTPBasicAuth | None = None,
+    headers: dict[str, str] | None = None,
+) -> str:
     """Fetch Packages.xz and return the decompressed content as a string."""
     url = f"{url_base}/Packages.xz"
-    resp = requests.get(url, auth=auth, timeout=30)
+    resp = requests.get(url, auth=auth, headers=headers, timeout=30)
     assert resp.status_code == 200, (
         f"Expected 200 for Packages.xz at {url}, got {resp.status_code}"
     )
     return lzma.decompress(resp.content).decode("utf-8")
+
+
+# The publish/build workflow reports success before the APT Packages index
+# (and its CDN-cached copy) has caught up, so a freshly-published package can be
+# briefly absent from Packages.xz. Poll until it appears, revalidating the CDN
+# copy each attempt so we don't keep reading a stale cached index.
+@retry(
+    retry=retry_if_result(lambda stanza: stanza is None),
+    wait=wait_exponential(multiplier=1, min=5, max=60),
+    stop=stop_after_delay(300),
+    before_sleep=before_sleep_log(_log, logging.WARNING),
+    retry_error_callback=lambda state: state.outcome.result(),
+)
+def fetch_package_stanza(
+    url_base: str, pkg_name: str, auth: requests.auth.HTTPBasicAuth | None = None
+):
+    """
+    Fetch Packages.xz and return the stanza for pkg_name, retrying while it is
+    absent to ride out APT index propagation lag.
+
+    Returns the stanza (dict-like) or None if it never appears within the
+    retry window, so callers can produce their own assertion message.
+    """
+    content = fetch_packages_xz(
+        url_base, auth=auth, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"}
+    )
+    return find_package_in_index(content, pkg_name)
 
 
 @retry(

@@ -6,25 +6,106 @@
 name: Debusine PR Check
 
 on:
-  workflow_run:
+  # workflow_run is required here: the Debusine PR Hook runs in the untrusted
+  # pull_request context (no secrets, and GITHUB_TOKEN is forced read-only
+  # for forks), so the privileged CI work and commit-status updates must run
+  # from this separate, trusted workflow. The PR number and base ref are
+  # resolved from the trusted head_sha via the GitHub API (not read from
+  # attacker-controlled PR data or from workflow_run.pull_requests, which is
+  # empty for fork PRs), and no job here is granted write access to
+  # repository contents (see the per-job permissions blocks below), so this
+  # cannot be abused to push to the repo.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
     workflows: ["Debusine PR Hook"]
     types:
       - completed
 
-permissions:
-  contents: write
-  deployments: write
-  statuses: write
-  packages: read
+# Deny all permissions at the workflow level; each job grants only what it
+# needs (see the per-job permissions blocks below).
+permissions: {}
 
 jobs:
+  resolve-pr:
+    name: Resolve PR from commit
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Reads PR metadata for the trusted head_sha and reports the initial
+    # commit status. Nothing here writes repository contents.
+    permissions:
+      contents: read
+      statuses: write
+    outputs:
+      pr_number: ${{ steps.resolve.outputs.pr_number }}
+      base_ref: ${{ steps.resolve.outputs.base_ref }}
+    steps:
+      - id: resolve
+        name: Resolve PR number and base ref from commit SHA
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        with:
+          script: |
+            const headSha = process.env.HEAD_SHA;
+            // workflow_run.pull_requests is empty when the head repository
+            // is a fork, so PR identity is resolved from the commit SHA
+            // instead - this always works, fork or not.
+            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: headSha,
+            });
+            const matches = prs.filter((pr) => pr.head.sha === headSha && pr.state === 'open');
+            if (matches.length !== 1) {
+              core.setFailed(`Expected exactly one open PR for commit ${headSha}, found ${matches.length}`);
+              return;
+            }
+            const pr = matches[0];
+            core.setOutput('pr_number', pr.number);
+            core.setOutput('base_ref', pr.base.ref);
+            core.info(`Resolved commit ${headSha} to PR #${pr.number} (base: ${pr.base.ref})`);
+
+      - name: Set disabled status
+        if: ${{ vars.DEBUSINE_WORKFLOWS_DISABLED == 'true' }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.workflow_run.head_sha,
+              state: 'success',
+              context: 'Debusine CI',
+              description: 'Debusine CI disabled for this repository'
+            });
+
+      - name: Set pending status
+        if: ${{ vars.DEBUSINE_WORKFLOWS_DISABLED != 'true' }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.workflow_run.head_sha,
+              state: 'pending',
+              context: 'Debusine CI',
+              description: 'Running Debusine CI...'
+            });
+
   debusine:
     name: Debusine
+    needs: resolve-pr
     if: ${{ vars.DEBUSINE_WORKFLOWS_DISABLED != 'true' && github.event.workflow_run.conclusion == 'success' }}
+    # This always calls debusine.yml with release: false, so the release job
+    # (the only one needing contents: write / deployments: write) is skipped.
+    # The jobs that do run only read the repo and pull container images.
+    permissions:
+      contents: read
+      packages: read
     uses: qualcomm-linux/debusine-action/.github/workflows/debusine.yml@main
     with:
-      source_ref: refs/pull/${{ github.event.workflow_run.pull_requests[0].number }}/merge
-      target_branch: ${{ github.event.workflow_run.pull_requests[0].base.ref }}
+      source_ref: refs/pull/${{ needs.resolve-pr.outputs.pr_number }}/merge
+      target_branch: ${{ needs.resolve-pr.outputs.base_ref }}
       release: false
       debusine-action-ref: main
       debusine-parent-workspace: ${{ vars.DEBUSINE_PARENT_WORKSPACE || 'qli-ci' }}
@@ -38,10 +119,13 @@ jobs:
     runs-on: ubuntu-latest
     needs: debusine
     if: always()
+    # Only needs to report the Debusine CI result as a commit status.
+    permissions:
+      statuses: write
     steps:
       - name: Set success status
         if: ${{ vars.DEBUSINE_WORKFLOWS_DISABLED == 'true' || needs.debusine.result == 'success' }}
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             await github.rest.repos.createCommitStatus({
@@ -59,7 +143,7 @@ jobs:
 
       - name: Set failure status
         if: ${{ vars.DEBUSINE_WORKFLOWS_DISABLED != 'true' && needs.debusine.result != 'success' }}
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             await github.rest.repos.createCommitStatus({

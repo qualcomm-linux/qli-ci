@@ -28,6 +28,9 @@ def publish_result(creds, release_token, build_result, target_workspace):
     host = creds["host"]
     scope = creds["scope"]
 
+    if build_result["vendor"] != "debian":
+        pytest.skip("publish is debian-only until ubuntu target workspaces exist")
+
     suite = build_result["suite"]
     component = build_result["component"]
 

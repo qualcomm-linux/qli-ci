@@ -9,6 +9,7 @@ Run: source ./setenv, then py.test-3 with any pytest args.
 """
 
 import os
+from collections import namedtuple
 
 import pytest
 
@@ -43,14 +44,37 @@ def pytest_configure(config):
 # Parametrized fixtures
 # ---------------------------------------------------------------------------
 
+# Per-vendor build matrix. Suites and components are paired within a vendor so
+# that debian suites never cross with ubuntu components (and vice versa).
+BuildCase = namedtuple("BuildCase", ["vendor", "suite", "component"])
 
-@pytest.fixture(scope="session", params=["trixie", "forky"])
-def suite(request):
-    return request.param
+VENDORS = {
+    "debian": {
+        "suites": ["trixie", "forky"],
+        "components": ["main", "contrib", "non-free", "non-free-firmware"],
+    },
+    "ubuntu": {
+        "suites": ["resolute", "stonking"],
+        "components": ["main", "restricted", "universe", "multiverse"],
+    },
+}
 
 
-@pytest.fixture(scope="session", params=["main", "contrib", "non-free", "non-free-firmware"])
-def component(request):
+def _build_cases():
+    return [
+        BuildCase(vendor, suite, component)
+        for vendor, cfg in VENDORS.items()
+        for suite in cfg["suites"]
+        for component in cfg["components"]
+    ]
+
+
+@pytest.fixture(
+    scope="session",
+    params=_build_cases(),
+    ids=lambda c: f"{c.vendor}-{c.suite}-{c.component}",
+)
+def build_case(request):
     return request.param
 
 

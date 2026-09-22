@@ -74,6 +74,9 @@ def create_minimal_source_package(
         "contrib": "contrib/misc",
         "non-free": "non-free/misc",
         "non-free-firmware": "non-free-firmware/firmware",
+        "restricted": "restricted/misc",
+        "universe": "universe/misc",
+        "multiverse": "multiverse/misc",
     }
     section = section_map[component]
 

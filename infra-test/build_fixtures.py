@@ -3,7 +3,7 @@
 
 """
 Session-scoped fixture that runs the build pipeline once per
-(suite, component) combination and shares the result across all tests.
+(vendor, suite, component) combination and shares the result across all tests.
 """
 
 import logging
@@ -21,28 +21,39 @@ from debusine.client.models import (
     CollectionDataNew,
 )
 
+from conftest import VENDORS
 from helpers import create_minimal_source_package, make_client, poll_work_request
 
 
 @pytest.fixture(scope="session")
-def build_result(creds, suite, component):
+def build_result(creds, build_case):
     """
-    Run the full Debusine build pipeline for one (suite, component) pair.
+    Run the full Debusine build pipeline for one (vendor, suite, component).
 
-    Session-scoped: pytest runs this once per (suite, component) combination
+    Session-scoped: pytest runs this once per build_case combination
     and reuses the result for every test that requests it.
     """
+    vendor, suite, component = build_case
+
     host = creds["host"]
     scope = creds["scope"]
     token = creds["token"]
     parent_workspace = creds["parent_workspace"]
 
-    logger = logging.getLogger(f"debusine.infra_test.build.{suite}.{component}")
+    logger = logging.getLogger(f"debusine.infra_test.build.{vendor}.{suite}.{component}")
     client = make_client(host, token, scope, logger)
 
-    abbrev = {"main": "m", "contrib": "c", "non-free": "nf", "non-free-firmware": "nff"}[component]
+    abbrev = {
+        "main": "m",
+        "contrib": "c",
+        "non-free": "nf",
+        "non-free-firmware": "nff",
+        "restricted": "r",
+        "universe": "u",
+        "multiverse": "mv",
+    }[component]
     ts = int(time.time())
-    child_suffix = f"infra-test-{suite}-{abbrev}-{ts}"
+    child_suffix = f"infra-test-{vendor}-{suite}-{abbrev}-{ts}"
     workspace = f"{parent_workspace}-{child_suffix}"
 
     build_dir = pathlib.Path(tempfile.mkdtemp(prefix="debusine-infra-test-"))
@@ -60,7 +71,7 @@ def build_result(creds, suite, component):
         f"create-child-workspace failed: result={final.result} status={final.status}"
     )
 
-    # 2. Create archive suite with all four components in one collection
+    # 2. Create archive suite with all components for this vendor in one collection
     logger.info("Creating archive suite %s in %s", suite, workspace)
     client.collection_create(
         workspace,
@@ -68,7 +79,7 @@ def build_result(creds, suite, component):
             name=suite,
             category=CollectionCategory.SUITE,
             data={
-                "components": ["main", "contrib", "non-free", "non-free-firmware"],
+                "components": VENDORS[vendor]["components"],
                 "architectures": ["all", "amd64", "arm64"],
             },
         ),
@@ -82,7 +93,7 @@ def build_result(creds, suite, component):
             name="debian_pipeline",
             task_name="debian_pipeline",
             static_parameters={
-                "vendor": "debian",
+                "vendor": vendor,
                 "sbuild_environment_variant": "buildd",
                 "enable_autopkgtest": False,
                 "enable_lintian": False,
@@ -126,6 +137,7 @@ def build_result(creds, suite, component):
         "final_wr": final_wr,
         "pkg_name": srcpkg.name,
         "pkg_version": srcpkg.version,
+        "vendor": vendor,
         "suite": suite,
         "component": component,
         "apt_url_base": f"https://deb.{host}/{scope}/{workspace}",

@@ -16,11 +16,16 @@ The test suite currently runs under a single Debusine principal and therefore do
 
 ### Build (`-m build`)
 
-For each combination of suite (`trixie`, `forky`) × component (`main`, `contrib`, `non-free`, `non-free-firmware`):
+The build phase runs for two vendors:
+
+- **debian** — suites `trixie`, `forky` × components `main`, `contrib`, `non-free`, `non-free-firmware`
+- **ubuntu** — suites `resolute`, `stonking` × components `main`, `restricted`, `universe`, `multiverse`
+
+For each (vendor, suite, component) combination:
 
 1. Creates a child workspace under `qli-ci` (the parent workspace used by real CI runs).
-2. Creates an archive suite with all four components and architectures `all`/`amd64`/`arm64`.
-3. Creates a `debian_pipeline` workflow template.
+2. Creates an archive suite with that vendor's components and architectures `all`/`amd64`/`arm64`.
+3. Creates a `debian_pipeline` workflow template with the matching `vendor`.
 4. Imports a minimal source package and runs a build.
 5. Verifies that the resulting child workspace APT repository:
    - Requires authentication (unauthenticated requests are rejected).
@@ -30,7 +35,10 @@ For each combination of suite (`trixie`, `forky`) × component (`main`, `contrib
 
 ### Publish (`-m publish`)
 
-For each build result × target workspace (`qli`, `qli-staging`):
+Publish currently runs for **debian only** — there are no ubuntu target
+workspaces yet, so ubuntu build results are skipped in the publish phase.
+
+For each debian build result × target workspace (`qli`, `qli-staging`):
 
 1. Runs the `package-publish` workflow from the child CI workspace to the target workspace.
 2. Verifies that the target workspace APT repository:
@@ -91,6 +99,12 @@ Run only one suite:
 py.test-3 -k trixie .
 ```
 
+Run only one vendor (test ids are `<vendor>-<suite>-<component>`):
+```sh
+py.test-3 -k ubuntu .
+py.test-3 -k debian .
+```
+
 Stop on first failure:
 ```sh
 py.test-3 -x .
@@ -100,7 +114,12 @@ These can be combined: `-m build -k trixie` runs only the build tests for trixie
 
 ## Runtime
 
-The full matrix is 8 build combinations × 2 target workspaces = 16 publish combinations, for 24 top-level parametrised cases. Each build takes as long as a real Debusine build (several minutes). Build results are shared across publish tests for the same (suite, component) pair, so the total wall time is dominated by the 8 builds rather than by the 24 test cases.
+The build matrix is 16 combinations (8 debian + 8 ubuntu). Publish runs for the 8
+debian builds × 2 target workspaces = 16 publish combinations; ubuntu build
+results are skipped in the publish phase. Each build takes as long as a real
+Debusine build (several minutes). Build results are shared across publish tests
+for the same (vendor, suite, component), so the total wall time is dominated by
+the 16 builds rather than by the individual test cases.
 
 ## Target host
 

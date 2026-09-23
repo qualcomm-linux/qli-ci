@@ -206,7 +206,10 @@ jobs:
           git commit -a -s -m "Update changelog for ${{env.upstream_version}}~pr${{inputs.pr-number}}-${{env.distro_revision}} Pull Request dry run"
 
       - name: Build Debian Packages
-        uses: ./qli-ci/.github/actions/build_package
+        # Deliberately not using $/ here: it would resolve against the ref
+        # this workflow itself was invoked at, instead of the qli-ci
+        # checkout at inputs.qli-ci-ref, breaking that decoupling.
+        uses: ./qli-ci/.github/actions/build_package # zizmor: ignore[self-repository]
         with:
           suite: ${{inputs.suite}}
           pkg-dir: package-repo
@@ -215,6 +218,7 @@ jobs:
 
       - name: Run ABI Check
         if: true
-        uses: ./qli-ci/.github/actions/abi_checker
+        # See rationale above.
+        uses: ./qli-ci/.github/actions/abi_checker # zizmor: ignore[self-repository]
         with:
           distro-codename: ${{inputs.suite}}

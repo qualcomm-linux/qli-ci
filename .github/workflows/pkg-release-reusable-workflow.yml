@@ -311,7 +311,7 @@ jobs:
     name: Build and Test
     needs:
       - prepare-release-source
-    uses: ./.github/workflows/pkg-build-reusable-workflow.yml
+    uses: $/.github/workflows/pkg-build-reusable-workflow.yml
     with:
       qli-ci-ref: ${{ inputs.qli-ci-ref }}
       debian-ref: ${{ inputs.debian-branch }}

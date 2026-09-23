@@ -249,7 +249,10 @@ jobs:
           echo "srcpkg_version=$(dpkg-parsechangelog --show-field Version)" >> "$GITHUB_OUTPUT"
 
       - name: Build Debian Packages
-        uses: ./qli-ci/.github/actions/build_package
+        # Deliberately not using $/ here: it would resolve against the ref
+        # this workflow itself was invoked at, instead of the qli-ci
+        # checkout at inputs.qli-ci-ref, breaking that decoupling.
+        uses: ./qli-ci/.github/actions/build_package # zizmor: ignore[self-repository]
         with:
           suite: ${{ needs.resolve.outputs.suite }}
           pkg-dir: package-repo
@@ -259,7 +262,8 @@ jobs:
 
       - name: Run ABI (Application Binary Interface) Check
         if: ${{ inputs.run-abi-checker }}
-        uses: ./qli-ci/.github/actions/abi_checker
+        # See rationale above.
+        uses: ./qli-ci/.github/actions/abi_checker # zizmor: ignore[self-repository]
         with:
           apt-repository: "deb [arch=arm64 trusted=yes] https://qartifactory-edge.qualcomm.com/artifactory/qsc-deb-releases ${{ needs.resolve.outputs.suite }} main"
 

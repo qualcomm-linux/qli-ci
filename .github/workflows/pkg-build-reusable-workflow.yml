@@ -450,7 +450,7 @@ jobs:
 
       - name: Validate installability from Debusine CI workspace
         # Temporarily disabled while dependency repository injection is unresolved.
-        if: ${{ false }}
+        if: false
         env:
           DEBUSINE_HOST: ${{ vars.DEBUSINE_HOST }}
           DEBUSINE_SCOPE: ${{ vars.DEBUSINE_SCOPE }}
@@ -526,7 +526,7 @@ jobs:
 
       - name: Validate installability from Docker build artifacts
         # Temporarily disabled while dependency repository injection is unresolved.
-        if: ${{ false }}
+        if: false
         env:
           SUITE: ${{ needs.resolve.outputs.suite }}
         run: |

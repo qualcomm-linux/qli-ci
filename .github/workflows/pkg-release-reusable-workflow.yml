@@ -702,17 +702,20 @@ jobs:
           else
             echo "ℹ️ No upstream.conf — generating provenance for source package"
 
-            NEAREST_UPSTREAM_BRANCH_TAG=$(git describe --tags --match 'upstream/*' --abbrev=0)
-            NEAREST_UPSTREAM_COMMIT=$(git rev-list -n 1 "$NEAREST_UPSTREAM_BRANCH_TAG")
-            NEAREST_UPSTREAM_TAG="${NEAREST_UPSTREAM_BRANCH_TAG#upstream/}"
+              if NEAREST_UPSTREAM_BRANCH_TAG=$(git describe --tags --match 'upstream/*' --abbrev=0 2>/dev/null); then
+                NEAREST_UPSTREAM_COMMIT=$(git rev-list -n 1 "$NEAREST_UPSTREAM_BRANCH_TAG")
+                NEAREST_UPSTREAM_TAG="${NEAREST_UPSTREAM_BRANCH_TAG#upstream/}"
 
-            if [[ "$NEAREST_UPSTREAM_TAG" == "$NEAREST_UPSTREAM_BRANCH_TAG" ]]; then
-              echo "::warning::Unexpected upstream tag format '${NEAREST_UPSTREAM_BRANCH_TAG}'; using it as-is"
-            else
-              echo "::notice::Using upstream tag '${NEAREST_UPSTREAM_TAG}' derived from '${NEAREST_UPSTREAM_BRANCH_TAG}'"
-            fi
-
-            cat > ../build/provenance.json << EOF2
+                if [[ "$NEAREST_UPSTREAM_TAG" == "$NEAREST_UPSTREAM_BRANCH_TAG" ]]; then
+                  echo "::warning::Unexpected upstream tag format '${NEAREST_UPSTREAM_BRANCH_TAG}'; using it as-is"
+                else
+                  echo "::notice::Using upstream tag '${NEAREST_UPSTREAM_TAG}' derived from '${NEAREST_UPSTREAM_BRANCH_TAG}'"
+                fi
+              else
+                NEAREST_UPSTREAM_BRANCH_TAG=""
+                NEAREST_UPSTREAM_TAG=""
+                NEAREST_UPSTREAM_COMMIT=""
+                echo "::warning::No upstream/* tag found for source package provenance; omitting upstream tag metadata."
           {
             "$SOURCE" : {
               "source_pkg_version": "${PKG_VERSION}",

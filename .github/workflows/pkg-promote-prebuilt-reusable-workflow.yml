@@ -75,7 +75,7 @@ jobs:
     steps:
 
       - name: Checkout qli-ci
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{inputs.qli-ci-ref}}
@@ -85,14 +85,18 @@ jobs:
           sparse-checkout: |
             .github
             scripts
+          persist-credentials: false
 
       - name: Checkout Packaging Repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           token: ${{secrets.DEB_PKG_BOT_CI_TOKEN}}
           path: ./package-repo
           fetch-depth: 0
           fetch-tags: true
+          # Needed by the later "Commit and Push Promotion Branch" step, which
+          # pushes via a plain `git push` without re-authenticating.
+          persist-credentials: true
 
       - name: Validate and Read Current upstream.conf
         env:

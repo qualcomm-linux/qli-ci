@@ -89,7 +89,7 @@ jobs:
 
 
       - name: Checkout qli-ci
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{inputs.qli-ci-ref}}
@@ -99,9 +99,10 @@ jobs:
           sparse-checkout: |
             .github
             scripts
+          persist-credentials: false
 
       - name: Checkout Packaging Repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: ${{inputs.pkg-repo}}
           clean: false
@@ -109,9 +110,10 @@ jobs:
           path: ./package-repo
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Checkout Upstream PR Branch
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: ${{inputs.upstream-repo}}
           ref: ${{inputs.upstream-repo-ref}}
@@ -119,6 +121,7 @@ jobs:
           token: ${{secrets.DEB_PKG_BOT_CI_TOKEN}}
           path: ./upstream-repo
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Tag Upstream PR And Add It As A Remote
         run: |
@@ -206,7 +209,10 @@ jobs:
           git commit -a -s -m "Update changelog for ${{env.upstream_version}}~pr${{inputs.pr-number}}-${{env.distro_revision}} Pull Request dry run"
 
       - name: Build Debian Packages
-        uses: ./qli-ci/.github/actions/build_package
+        # Deliberately not using $/ here: it would resolve against the ref
+        # this workflow itself was invoked at, instead of the qli-ci
+        # checkout at inputs.qli-ci-ref, breaking that decoupling.
+        uses: ./qli-ci/.github/actions/build_package # zizmor: ignore[self-repository]
         with:
           suite: ${{inputs.suite}}
           pkg-dir: package-repo
@@ -215,6 +221,7 @@ jobs:
 
       - name: Run ABI Check
         if: true
-        uses: ./qli-ci/.github/actions/abi_checker
+        # See rationale above.
+        uses: ./qli-ci/.github/actions/abi_checker # zizmor: ignore[self-repository]
         with:
           distro-codename: ${{inputs.suite}}

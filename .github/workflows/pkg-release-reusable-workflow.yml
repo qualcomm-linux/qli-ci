@@ -674,10 +674,27 @@ jobs:
 
           PACKAGE_REPO_COMMIT="$(git rev-parse HEAD)"
 
+          PREBUILT_PACKAGE=false
           if [[ -f "upstream.conf" ]]; then
-            echo "ℹ️ upstream.conf found — generating provenance for prebuilt binary package"
-            # shellcheck source=/dev/null
-            source upstream.conf
+            PREBUILT_PACKAGE=true
+          elif [[ -f "debian/watch" ]] && grep -Eq 'prebuilt_|/prebuilt_' "debian/watch"; then
+            PREBUILT_PACKAGE=true
+          fi
+
+          if [[ "$PREBUILT_PACKAGE" == "true" ]]; then
+            echo "ℹ️ Detected prebuilt package — generating provenance for prebuilt binary package"
+
+            if [[ -f "upstream.conf" ]]; then
+              # shellcheck source=/dev/null
+              source upstream.conf
+            else
+              # Some prebuilt packages do not carry upstream.conf, but are still
+              # identified by a prebuilt_ URL in debian/watch.
+              ARTIFACTORY="${ARTIFACTORY:-}"
+              TAG="${TAG:-}"
+              DISTRO="${DISTRO:-}"
+              PACKAGE_NAME="${PACKAGE_NAME:-}"
+            fi
 
             cat > ../build/provenance.json << EOF2
           {
@@ -700,16 +717,20 @@ jobs:
           }
           EOF2
           else
-            echo "ℹ️ No upstream.conf — generating provenance for source package"
+            echo "ℹ️ No prebuilt markers found — generating provenance for source package"
 
-            NEAREST_UPSTREAM_BRANCH_TAG=$(git describe --tags --match 'upstream/*' --abbrev=0)
-            NEAREST_UPSTREAM_COMMIT=$(git rev-list -n 1 "$NEAREST_UPSTREAM_BRANCH_TAG")
-            NEAREST_UPSTREAM_TAG="${NEAREST_UPSTREAM_BRANCH_TAG#upstream/}"
+            if NEAREST_UPSTREAM_BRANCH_TAG=$(git describe --tags --match 'upstream/*' --abbrev=0 2>/dev/null); then
+              NEAREST_UPSTREAM_COMMIT=$(git rev-list -n 1 "$NEAREST_UPSTREAM_BRANCH_TAG")
+              NEAREST_UPSTREAM_TAG="${NEAREST_UPSTREAM_BRANCH_TAG#upstream/}"
 
-            if [[ "$NEAREST_UPSTREAM_TAG" == "$NEAREST_UPSTREAM_BRANCH_TAG" ]]; then
-              echo "::warning::Unexpected upstream tag format '${NEAREST_UPSTREAM_BRANCH_TAG}'; using it as-is"
+              if [[ "$NEAREST_UPSTREAM_TAG" == "$NEAREST_UPSTREAM_BRANCH_TAG" ]]; then
+                echo "::warning::Unexpected upstream tag format '${NEAREST_UPSTREAM_BRANCH_TAG}'; using it as-is"
+              else
+                echo "::notice::Using upstream tag '${NEAREST_UPSTREAM_TAG}' derived from '${NEAREST_UPSTREAM_BRANCH_TAG}'"
+              fi
             else
-              echo "::notice::Using upstream tag '${NEAREST_UPSTREAM_TAG}' derived from '${NEAREST_UPSTREAM_BRANCH_TAG}'"
+              echo "::error::Source package has no upstream/* tag and no prebuilt markers were detected. Add an upstream tag or mark the package as prebuilt by adding upstream.conf or a prebuilt_ URL in debian/watch." >&2
+              exit 1
             fi
 
             cat > ../build/provenance.json << EOF2

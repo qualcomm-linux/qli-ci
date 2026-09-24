@@ -115,7 +115,7 @@ jobs:
       suite: ${{ steps.resolve.outputs.suite }}
     steps:
       - name: Checkout qli-ci scripts
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ inputs.qli-ci-ref }}
@@ -223,7 +223,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout qli-ci
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ inputs.qli-ci-ref }}
@@ -236,7 +236,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ inputs.debian-ref }}
           path: package-repo
@@ -276,7 +276,7 @@ jobs:
           tar -C build-area -czf docker-build-area.tgz .
 
       - name: Upload Docker build archive
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: docker-build-area
           path: docker-build-area.tgz
@@ -304,7 +304,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout debusine-action helpers
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: qualcomm-linux/debusine-action
           ref: ${{ env.DEBUSINE_ACTION_REF }}
@@ -315,7 +315,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout Repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ inputs.debian-ref }}
           path: srcpkg
@@ -384,7 +384,7 @@ jobs:
 
       - name: Upload release bundle
         if: ${{ inputs.release }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-bundle
           path: release.bundle
@@ -442,7 +442,7 @@ jobs:
 
       - name: Checkout debusine-action helpers
         if: ${{ needs.resolve.outputs.family == 'debian' && needs.resolve.outputs.force_docker_build != 'true' }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: qualcomm-linux/debusine-action
           ref: ${{ env.DEBUSINE_ACTION_REF }}
@@ -454,7 +454,7 @@ jobs:
 
       - name: Checkout Repository
         if: ${{ needs.resolve.outputs.family == 'debian' && needs.resolve.outputs.force_docker_build != 'true' }}
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ inputs.debian-ref }}
           path: srcpkg
@@ -525,7 +525,7 @@ jobs:
 
       - name: Download Docker build artifacts
         if: ${{ needs.resolve.outputs.family == 'ubuntu' || needs.resolve.outputs.force_docker_build == 'true' }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: docker-build-area
           path: .
@@ -640,7 +640,7 @@ jobs:
     steps:
 
       - name: Download Docker build artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: docker-build-area
           path: .
@@ -686,7 +686,7 @@ jobs:
           fi
 
       - name: Upload proposed debs to S3
-        uses: qualcomm-linux/upload-private-artifact-action@aws-v4
+        uses: qualcomm-linux/upload-private-artifact-action@4940e9327cd7386acdb908b61c714c079b7d754b # aws-v4
         with:
           s3_bucket: qli-prd-lecore-gh-artifacts
           path: s3-proposed

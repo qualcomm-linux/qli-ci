@@ -108,6 +108,8 @@ jobs:
     steps:
       - name: Checkout qli-ci
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Resolve run parameters
         id: resolve
@@ -292,6 +294,8 @@ jobs:
     steps:
       - name: Checkout qli-ci
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Resolve run parameters
         id: resolve
@@ -467,6 +471,8 @@ jobs:
     steps:
       - name: Checkout qli-ci
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Resolve run parameters
         id: resolve

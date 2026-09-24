@@ -99,6 +99,7 @@ jobs:
           sparse-checkout: |
             .github
             scripts
+          persist-credentials: false
 
       - name: Checkout Packaging Repo
         uses: actions/checkout@v5
@@ -109,6 +110,7 @@ jobs:
           path: ./package-repo
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Checkout Upstream PR Branch
         uses: actions/checkout@v5
@@ -119,6 +121,7 @@ jobs:
           token: ${{secrets.DEB_PKG_BOT_CI_TOKEN}}
           path: ./upstream-repo
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Tag Upstream PR And Add It As A Remote
         run: |

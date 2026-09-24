@@ -121,6 +121,7 @@ jobs:
           ref: ${{ inputs.qli-ci-ref }}
           token: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           path: qli-ci
+          persist-credentials: false
 
       - name: Resolve family and suite from branch
         id: resolve
@@ -232,6 +233,7 @@ jobs:
           sparse-checkout: |
             .github
             scripts
+          persist-credentials: false
 
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -240,6 +242,7 @@ jobs:
           path: package-repo
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Collect source package metadata
         id: metadata
@@ -309,6 +312,7 @@ jobs:
           fetch-depth: 1
           sparse-checkout: |
             lib
+          persist-credentials: false
 
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -317,6 +321,9 @@ jobs:
           path: srcpkg
           fetch-depth: 0
           fetch-tags: true
+          # Keep credentials: debusine-action/lib/generate-source-package
+          # fetches pristine-tar and upstream tag refs from origin afterward.
+          persist-credentials: true
 
       - name: Prepare release
         if: ${{ inputs.release }}
@@ -443,6 +450,7 @@ jobs:
           fetch-depth: 1
           sparse-checkout: |
             lib
+          persist-credentials: false
 
       - name: Checkout Repository
         if: ${{ needs.resolve.outputs.family == 'debian' && needs.resolve.outputs.force_docker_build != 'true' }}
@@ -451,6 +459,7 @@ jobs:
           ref: ${{ inputs.debian-ref }}
           path: srcpkg
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Validate installability from Debusine CI workspace
         # Temporarily disabled while dependency repository injection is unresolved.

@@ -81,6 +81,7 @@ jobs:
           ref: ${{ inputs.qli-ci-ref }}
           token: ${{ secrets.PAT }}
           path: qli-ci
+          persist-credentials: false
 
       - name: Resolve family and suite from branch
         id: resolve
@@ -363,6 +364,7 @@ jobs:
           fetch-depth: 1
           sparse-checkout: |
             lib
+          persist-credentials: false
 
       - name: Checkout Packaging Repo
         uses: actions/checkout@v5
@@ -372,6 +374,9 @@ jobs:
           ref: ${{ inputs.debian-branch }}
           fetch-depth: 0
           fetch-tags: true
+          # Needed by the later "Push release git state" step, which pushes
+          # via debusine-action/lib/push-release without re-authenticating.
+          persist-credentials: true
 
       - name: Download release bundle
         uses: actions/download-artifact@v8
@@ -624,6 +629,7 @@ jobs:
           ref: ${{ inputs.debian-branch }}
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Download prepared source repository
         if: ${{ needs.build-and-test.outputs.family == 'ubuntu' }}

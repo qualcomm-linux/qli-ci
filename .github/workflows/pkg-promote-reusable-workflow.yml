@@ -170,6 +170,7 @@ jobs:
           sparse-checkout: |
             .github
             scripts
+          persist-credentials: false
 
       # Fetch all history for all tags and branches
       - name: Checkout Repository
@@ -178,6 +179,9 @@ jobs:
           token: ${{secrets.PAT}}
           path: ./package-repo
           fetch-depth: 0
+          # Needed by the later "Push Upstream/latest and debian PR Branch"
+          # step, which pushes via plain `git push` without re-authenticating.
+          persist-credentials: true
 
       - name: Authenticate with GitHub
         run : |

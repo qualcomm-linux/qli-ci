@@ -16,6 +16,7 @@ IS_FORK_PR="${IS_FORK_PR:-false}"
 BOT_TOKEN="${BOT_TOKEN:-}"
 ENABLE_DEBIAN_PATH_RAW="${ENABLE_DEBIAN_PATH:-1}"
 ENABLE_UBUNTU_PATH_RAW="${ENABLE_UBUNTU_PATH:-1}"
+ENABLE_DEBUSINE_PATH_RAW="${ENABLE_DEBUSINE_PATH:-1}"
 PROMOTE_MODE="${PROMOTE_MODE:-source}"
 
 # Root of this qli-ci checkout, so reset logic can source fixtures/templates
@@ -209,6 +210,7 @@ lane_is_enabled() {
   case "$lane" in
     debian) state_get '.meta.enable_debian' ;;
     ubuntu) state_get '.meta.enable_ubuntu' ;;
+    debusine) state_get '.meta.enable_debusine' ;;
     *)
       echo "false"
       ;;
@@ -219,6 +221,7 @@ lane_branch() {
   case "$1" in
     debian) echo "qcom/debian/latest" ;;
     ubuntu) echo "qcom/ubuntu/resolute" ;;
+    debusine) echo "qcom/debian/latest" ;;
     *)
       echo "Unsupported lane: $1" >&2
       return 1
@@ -702,6 +705,37 @@ wait_for_pr_build() {
   wait_for_run_conclusion "$LAST_RUN_ID" 360 5
 }
 
+DEBUSINE_CHECK_CONTEXT="Debusine CI"
+
+# Polls the commit's combined status for the "Debusine CI" context that
+# debusine-pr-check.yml posts once its workflow_run reaction to
+# debusine-pr-hook.yml resolves. There is no dispatched run to watch here
+# (unlike wait_for_pr_build): debusine-pr-check.yml is workflow_run
+# triggered, so the only observable signal is the commit status itself.
+wait_for_debusine_check() {
+  local pr_head_sha="$1"
+  local max_attempts="${2:-360}"
+  local sleep_seconds="${3:-5}"
+
+  local status_json status
+  for _ in $(seq 1 "$max_attempts"); do
+    abort_if_cancelled
+    status_json="$(gh_bot api "/repos/${PKG_REPO}/commits/${pr_head_sha}/status" 2>/dev/null || true)"
+    if [[ -n "$status_json" ]]; then
+      status="$(jq -r --arg ctx "$DEBUSINE_CHECK_CONTEXT" '[.statuses[]? | select(.context == $ctx)] | first | .state // empty' <<<"$status_json")"
+      case "$status" in
+        success) return 0 ;;
+        failure|error) return 1 ;;
+      esac
+    fi
+
+    abort_if_cancelled
+    sleep "$sleep_seconds"
+  done
+
+  return 1
+}
+
 merge_promotion_pr() {
   local pr_number="$1"
   local merge_output
@@ -742,9 +776,10 @@ cmd_init() {
     return 1
   fi
 
-  local enable_debian enable_ubuntu
+  local enable_debian enable_ubuntu enable_debusine
   enable_debian="$(normalize_bool "$ENABLE_DEBIAN_PATH_RAW")"
   enable_ubuntu="$(normalize_bool "$ENABLE_UBUNTU_PATH_RAW")"
+  enable_debusine="$(normalize_bool "$ENABLE_DEBUSINE_PATH_RAW")"
 
   jq -n \
     --arg qli_ref "$QLI_CI_REF" \
@@ -754,6 +789,7 @@ cmd_init() {
     --arg skip "$IS_FORK_PR" \
     --argjson enable_debian "$enable_debian" \
     --argjson enable_ubuntu "$enable_ubuntu" \
+    --argjson enable_debusine "$enable_debusine" \
     '{
       meta: {
         qli_ci_ref: $qli_ref,
@@ -763,12 +799,35 @@ cmd_init() {
         skip: ($skip == "true"),
         enable_debian: $enable_debian,
         enable_ubuntu: $enable_ubuntu,
+        enable_debusine: $enable_debusine,
         prepared: false,
         overall_failure: false,
         note: "",
         repo_dir: ""
       },
       lanes: {
+        debusine: {
+          reset: {status: "skipped", url: ""},
+          seed: {status: "n/a", url: ""},
+          tags: {
+            "v1.0.0": {
+              promote: {status: "skipped", url: ""},
+              sync: {status: "skipped", url: ""},
+              prbuild: {status: "skipped", url: ""},
+              merge: {status: "skipped", url: ""},
+              release: {status: "skipped", url: ""},
+              pr: {number: "", url: "", head: "", head_sha: ""}
+            },
+            "v1.1.0": {
+              promote: {status: "skipped", url: ""},
+              sync: {status: "skipped", url: ""},
+              prbuild: {status: "skipped", url: ""},
+              merge: {status: "skipped", url: ""},
+              release: {status: "skipped", url: ""},
+              pr: {number: "", url: "", head: "", head_sha: ""}
+            }
+          }
+        },
         debian: {
           reset: {status: "skipped", url: ""},
           seed: {status: "n/a", url: ""},
@@ -818,8 +877,8 @@ cmd_init() {
 
   if [[ "$IS_FORK_PR" == "true" ]]; then
     state_set_meta_str "note" "Fork PR detected; skipping because required secrets are not available to fork-triggered pull_request runs."
-  elif [[ "$enable_debian" != "true" || "$enable_ubuntu" != "true" ]]; then
-    state_set_meta_str "note" "Path toggles: ENABLE_DEBIAN_PATH=${enable_debian}, ENABLE_UBUNTU_PATH=${enable_ubuntu}"
+  elif [[ "$enable_debian" != "true" || "$enable_ubuntu" != "true" || "$enable_debusine" != "true" ]]; then
+    state_set_meta_str "note" "Path toggles: ENABLE_DEBUSINE_PATH=${enable_debusine}, ENABLE_DEBIAN_PATH=${enable_debian}, ENABLE_UBUNTU_PATH=${enable_ubuntu}"
   fi
 
   write_output "summary_file" "$SUMMARY_FILE"
@@ -833,7 +892,7 @@ cmd_prepare_repo() {
     return 0
   fi
 
-  if [[ "$(state_get '.meta.enable_debian')" != "true" && "$(state_get '.meta.enable_ubuntu')" != "true" ]]; then
+  if [[ "$(state_get '.meta.enable_debian')" != "true" && "$(state_get '.meta.enable_ubuntu')" != "true" && "$(state_get '.meta.enable_debusine')" != "true" ]]; then
     return 0
   fi
 
@@ -1232,6 +1291,51 @@ cmd_wait_pr_build() {
   return 1
 }
 
+# Debusine lane equivalent of cmd_wait_pr_build: there is no PR-hook ref to
+# patch or dispatched run to watch here (debusine-pr-hook.yml does not
+# reference qli-ci at all), so this gates directly on "promote" and records
+# its result in the "prbuild" phase, keeping merge/release gating identical
+# across lanes.
+cmd_wait_debusine_check() {
+  ensure_state
+  local lane="$1"
+  local tag="$2"
+
+  if [[ "$(state_get '.meta.skip')" == "true" ]]; then
+    set_tag_phase "$lane" "$tag" "prbuild" "skipped" ""
+    return 0
+  fi
+
+  if [[ "$(lane_is_enabled "$lane")" != "true" ]]; then
+    set_tag_phase "$lane" "$tag" "prbuild" "skipped" ""
+    return 0
+  fi
+
+  if [[ "$(get_tag_phase_status "$lane" "$tag" "promote")" != "success" ]]; then
+    set_tag_phase "$lane" "$tag" "prbuild" "skipped" ""
+    return 0
+  fi
+
+  local pr_head_sha pr_url
+  pr_head_sha="$(state_get ".lanes[\"$lane\"].tags[\"$tag\"].pr.head_sha")"
+  pr_url="$(state_get ".lanes[\"$lane\"].tags[\"$tag\"].pr.url")"
+
+  if [[ -z "$pr_head_sha" ]]; then
+    set_tag_phase "$lane" "$tag" "prbuild" "failure" "$pr_url"
+    mark_overall_failure "Missing PR head SHA for debusine check ${lane} ${tag}"
+    return 1
+  fi
+
+  if wait_for_debusine_check "$pr_head_sha"; then
+    set_tag_phase "$lane" "$tag" "prbuild" "success" "$pr_url"
+    return 0
+  fi
+
+  set_tag_phase "$lane" "$tag" "prbuild" "failure" "$pr_url"
+  mark_overall_failure "Debusine CI check failed for ${lane} ${tag}"
+  return 1
+}
+
 cmd_merge_pr() {
   ensure_state
   local lane="$1"
@@ -1295,14 +1399,28 @@ cmd_release_tag() {
   local lane_branch
   lane_branch="$(lane_branch "$lane")"
 
-  if dispatch_workflow_and_wait .github/workflows/pkg-release.yml "$PKG_BASE_REF" --auto-approve-pending-deployments -f debian-branch="$lane_branch"; then
-    set_tag_phase "$lane" "$tag" "release" "success" "$LAST_RUN_URL"
-    return 0
+  if ! dispatch_workflow_and_wait .github/workflows/pkg-release.yml "$PKG_BASE_REF" --auto-approve-pending-deployments -f debian-branch="$lane_branch"; then
+    set_tag_phase "$lane" "$tag" "release" "failure" "$LAST_RUN_URL"
+    mark_overall_failure "Release failed for ${lane} ${tag}"
+    return 1
   fi
 
-  set_tag_phase "$lane" "$tag" "release" "failure" "$LAST_RUN_URL"
-  mark_overall_failure "Release failed for ${lane} ${tag}"
-  return 1
+  local release_url="$LAST_RUN_URL"
+
+  # debusine-release.yml is a separate, standalone release path copied from
+  # debusine-action and is not exercised by pkg-release.yml's own internal
+  # Debusine helper calls, so it needs its own dispatch. release=false: the
+  # real release already happened above, this only validates the wiring.
+  if [[ "$lane" == "debusine" ]]; then
+    if ! dispatch_workflow_and_wait .github/workflows/debusine-release.yml "$lane_branch" -f release=false; then
+      set_tag_phase "$lane" "$tag" "release" "failure" "$LAST_RUN_URL"
+      mark_overall_failure "debusine-release.yml dispatch failed for ${lane} ${tag}"
+      return 1
+    fi
+  fi
+
+  set_tag_phase "$lane" "$tag" "release" "success" "$release_url"
+  return 0
 }
 
 cmd_curate_ubuntu_wip_after_first_release() {
@@ -1397,13 +1515,14 @@ cmd_write_summary() {
   fi
 
   local qli_ci_ref qli_ci_pr_number note promote_mode
-  local enable_debian enable_ubuntu
+  local enable_debian enable_ubuntu enable_debusine
   qli_ci_ref="$(state_get '.meta.qli_ci_ref')"
   qli_ci_pr_number="$(state_get '.meta.qli_ci_pr_number')"
   promote_mode="$(state_get '.meta.promote_mode')"
   note="$(state_get '.meta.note')"
   enable_debian="$(state_get '.meta.enable_debian')"
   enable_ubuntu="$(state_get '.meta.enable_ubuntu')"
+  enable_debusine="$(state_get '.meta.enable_debusine')"
 
   {
     echo "## pkg-example e2e loop"
@@ -1414,7 +1533,7 @@ cmd_write_summary() {
     fi
     echo "- pkg-example is rebuilt from scratch on \`$PKG_BASE_REF\` each run"
     echo "- promote mode: \`$promote_mode\`"
-    echo "- path toggles: debian=${enable_debian}, ubuntu=${enable_ubuntu}"
+    echo "- path toggles: debusine=${enable_debusine}, debian=${enable_debian}, ubuntu=${enable_ubuntu}"
     echo "- result: **$overall_status**"
     if [[ -n "$note" ]]; then
       echo "- note: $note"
@@ -1423,7 +1542,7 @@ cmd_write_summary() {
     echo "| Lane | Tag | Reset | Seed Ubuntu | Promote | PR Build | Merge PR | Release |"
     echo "| --- | --- | --- | --- | --- | --- | --- | --- |"
 
-    for lane in debian ubuntu; do
+    for lane in debusine debian ubuntu; do
       local_reset_status="$(state_get ".lanes[\"$lane\"].reset.status")"
       local_reset_url="$(state_get ".lanes[\"$lane\"].reset.url")"
       local_seed_status="$(state_get ".lanes[\"$lane\"].seed.status")"
@@ -1493,14 +1612,15 @@ usage() {
 Usage:
   $0 init
   $0 prepare-repo
-  $0 reset-lane <debian|ubuntu>
+  $0 reset-lane <debian|ubuntu|debusine>
   $0 seed-ubuntu
   $0 seed-prebuilt-fixtures [ubuntu]
-  $0 promote-tag <debian|ubuntu> <tag> [source|prebuilt]
+  $0 promote-tag <debian|ubuntu|debusine> <tag> [source|prebuilt]
   $0 sync-pr-hook <debian|ubuntu> <tag>
   $0 wait-pr-build <debian|ubuntu> <tag>
-  $0 merge-pr <debian|ubuntu> <tag>
-  $0 release-tag <debian|ubuntu> <tag>
+  $0 wait-debusine-check <debusine> <tag>
+  $0 merge-pr <debian|ubuntu|debusine> <tag>
+  $0 release-tag <debian|ubuntu|debusine> <tag>
   $0 curate-ubuntu-wip-after-first-release
   $0 write-summary
   $0 cleanup
@@ -1539,6 +1659,10 @@ main() {
     wait-pr-build)
       shift
       cmd_wait_pr_build "${1:-}" "${2:-}"
+      ;;
+    wait-debusine-check)
+      shift
+      cmd_wait_debusine_check "${1:-}" "${2:-}"
       ;;
     merge-pr)
       shift

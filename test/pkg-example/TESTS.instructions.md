@@ -10,11 +10,14 @@ Current scope is the `pkg-example` loop test implemented by:
 
 - `.github/workflows/pkg-example-e2e-loop.yml`
 - `test/pkg-example/pkg_example_e2e_loop.sh`
+- `test/pkg-example/debian/` (Debian packaging metadata fixture)
+- `test/pkg-example/pkg-pr-build-check.yml` (pkg-example-specific fixture)
 
 The suite validates that a given `qli-ci` ref works across the package
 lifecycle loop:
 
-`reset -> promote -> promotion PR build -> merge -> release`
+`reset -> promote -> promotion PR build (or Debusine CI check) -> merge ->
+release`
 
 for source tags:
 
@@ -23,6 +26,7 @@ for source tags:
 
 and lanes:
 
+- Debusine lane (`qcom/debian/latest`, Debusine PR CI check)
 - Prebuilt promote lane (`qcom/ubuntu/resolute`, prebuilt mode, `v1.0.0`)
 - Debian lane (`qcom/debian/latest`)
 - Ubuntu lane (`qcom/ubuntu/resolute`)
@@ -65,17 +69,21 @@ Expected behavior:
 The workflow is intentionally split into sequential jobs for GitHub UI clarity:
 
 1. `pkg-example e2e (global slot)`
-2. `pkg-example e2e (prebuilt promote lane)`
-3. `pkg-example e2e (debian lane)`
-4. `pkg-example e2e (ubuntu lane)`
+2. `pkg-example e2e (debusine lane)`
+3. `pkg-example e2e (prebuilt promote lane)`
+4. `pkg-example e2e (debian lane)`
+5. `pkg-example e2e (ubuntu lane)`
 
 Execution is sequential, not parallel:
 
+- Debusine lane runs first, before every other lane.
 - Prebuilt promote lane runs before Debian lane.
 - Debian lane runs before Ubuntu lane.
 
 State handoff:
 
+- Debusine and prebuilt promote lanes are self-contained: each uses its own
+  dedicated state/summary files and nothing downstream consumes them.
 - Debian uploads `/tmp/pkg-example-e2e-state.json` as artifact
   `pkg-example-e2e-state-<run_id>`.
 - Ubuntu downloads this shared state when Debian succeeded.
@@ -84,11 +92,15 @@ State handoff:
 
 ## Lane Gating
 
-Job-level toggles come from repo variables:
+Job-level toggles come from repo variables (`'true'` or `'false'`; each
+defaults to `'false'`, i.e. enabled, when unset — the job's `if:` always
+defaults via `(vars.X || 'false') != 'true'` so a missing variable never
+accidentally disables a lane):
 
-- `ENABLE_PREBUILT_PATH` (`1` or `0`; defaults to enabled when unset)
-- `ENABLE_DEBIAN_PATH` (`1` or `0`)
-- `ENABLE_UBUNTU_PATH` (`1` or `0`)
+- `DISABLE_DEBUSINE_PATH`
+- `DISABLE_PREBUILT_PATH`
+- `DISABLE_DEBIAN_PATH`
+- `DISABLE_UBUNTU_PATH`
 
 Expected behavior:
 
@@ -113,6 +125,58 @@ Current behavior:
 When `AXIOM_ENABLE` is `false`, AXIOM stages are skipped and Ubuntu release
 keeps only the normal `Ubuntu Production` environment gate.
 
+## Reset Model
+
+`pkg-example` is treated as a fully disposable sandbox: every lane's reset
+phase wipes and rebuilds it entirely from this repo's own checkout, using
+direct git operations against a bot-token clone (the same pattern
+`seed-ubuntu`/`seed-prebuilt-fixtures` use), not by dispatching anything that
+lives in `pkg-example` itself. This closed a real drift bug: `pkg-example`'s
+own `debian-branch-default-content/` had fallen back to the pre-cutover
+`qcom-build-utils@development` contract, and the old ref-patch step only
+matched `qualcomm-linux/qli-ci/...` lines, so it silently never got
+retargeted.
+
+`reset-lane <lane>` performs, in order:
+
+1. Rebuild `pkg-example`'s default branch from scratch as a fresh orphan
+   commit, force-pushed. Content comes from this qli-ci checkout: the five
+   `pkg-*` caller workflows (ref-patched to the ref under test), the
+   `pkg-example`-specific `pkg-pr-build-check.yml` fixture (also ref-patched),
+   and the full Debusine default-branch set (`debusine-daily.yml`,
+   `debusine-pr-check.yml`, `debusine-release.yml`, `README.debusine.md`,
+   copied verbatim since they call `debusine-action`, not `qli-ci`, so there
+   is no ref to patch). `debusine-release.yml` is dispatched against
+   `qcom/debian/latest`, not this branch, but it still has to be seeded
+   here too: `workflow_dispatch` requires a workflow file to exist on the
+   repository's actual default branch to be dispatchable via the API at
+   all, regardless of the `--ref` passed at dispatch time.
+2. Wipe all tags and all `qcom/*`, `upstream/latest`, and `debian/pr/*`
+   branches.
+3. Recreate `qcom/debian/latest` as a fresh orphan branch, seeded from
+   `test/pkg-example/debian/` plus a lane-specific PR-hook/release set:
+   - debusine lane: `debusine-pr-hook.yml`, `debusine-release.yml`, and
+     `README.debusine.md` only (copied verbatim, same reasoning as above) -
+     deliberately no `pkg-pr-hook.yml`, so this lane's promotion PRs (opened
+     via `pkg-promote`, since no debusine-specific promote flow exists yet)
+     only exercise the standalone debusine PR-hook/check split, not
+     `pkg-build-reusable-workflow.yml` too. That's the debian lane's job.
+   - debian/ubuntu lanes: `pkg-pr-hook.yml` only (ref-patched) - no Debusine
+     files, so their promotion PRs don't spuriously also trigger the
+     debusine split.
+
+Every subsequent workflow dispatch in the loop targets `pkg-example`'s real
+default branch directly (there is no more `ci/qli-loop/*` temp branch): it is
+already rebuilt fresh before every lane runs.
+
+**Accepted trade-off**: `pkg-example`'s default branch git history is
+rewritten on every e2e run and no longer represents stable, human-relied-upon
+content between runs.
+
+A standalone workflow, `.github/workflows/pkg-example-reset.yml`, exposes the
+same reset logic via `workflow_dispatch` for humans who want to reset
+`pkg-example` without running the full loop.
+
 ## Operational Flow
 
 The workflow invokes explicit phase commands from
@@ -120,16 +184,20 @@ The workflow invokes explicit phase commands from
 
 Per enabled lane:
 
-1. `prepare-temp-branch`
-2. `reset-lane <lane>`
+1. `prepare-repo` (clone `pkg-example`, configure git identity/remote)
+2. `reset-lane <lane>` (see Reset Model above)
 3. Ubuntu-based lanes: `seed-ubuntu`
 4. Prebuilt promote lane only: `seed-prebuilt-fixtures ubuntu`
 5. For each test tag:
    - `promote-tag <lane> <tag>`
-   - `sync-pr-hook <lane> <tag>`
-   - `wait-pr-build <lane> <tag>`
+   - Debian/Ubuntu lanes: `sync-pr-hook <lane> <tag>` then
+     `wait-pr-build <lane> <tag>`
+   - Debusine lane: `wait-debusine-check <lane> <tag>` (no `sync-pr-hook`:
+     `debusine-pr-hook.yml` does not reference `qli-ci` at all, so there is
+     nothing to patch)
    - `merge-pr <lane> <tag>`
-   - `release-tag <lane> <tag>`
+   - `release-tag <lane> <tag>` — Debusine lane also dispatches
+     `debusine-release.yml` here (see Debusine Lane Check Contract below)
 6. Ubuntu source lane only between first and second tag:
    - `curate-ubuntu-wip-after-first-release`
    - rewrites the top changelog WIP reminder entry to a releasable entry
@@ -139,26 +207,52 @@ Post flow (always):
 
 - `write-summary`
 - append summary to `$GITHUB_STEP_SUMMARY`
-- upsert PR comment (PR events)
+- upsert PR comment (PR events, debian/ubuntu lanes)
 - `cleanup`
+
+## Debusine Lane Check Contract
+
+`debusine-pr-check.yml` is `workflow_run`-triggered and only ever fires if it
+exists on `pkg-example`'s actual default branch (GitHub will not register a
+`workflow_run` listener from any other branch). Reset (above) guarantees
+that. It reacts to `debusine-pr-hook.yml` (seeded on `qcom/debian/latest`,
+present on the promotion PR since it targets that branch) and posts a
+`Debusine CI` commit status on the PR head SHA.
+
+`wait-debusine-check` polls `/repos/{repo}/commits/{sha}/status` for that
+context directly — there is no dispatched run to watch, unlike
+`wait-pr-build`. Its result is recorded in the tag's `prbuild` phase (the
+same field name debian/ubuntu use for their PR-build wait), so `merge-pr` and
+`release-tag`'s gating logic is unchanged and shared across all three lanes.
+
+`release-tag` additionally dispatches `debusine-release.yml` directly against
+`qcom/debian/latest` with `release=false` for the debusine lane only: it is a
+separate, standalone release path copied from `debusine-action` and is not
+exercised by `pkg-release.yml`'s own internal Debusine helper calls, so it
+needs its own validation. `release=false` because the real release already
+happened via the preceding `pkg-release.yml` dispatch; this step only
+validates the wiring.
 
 ## State Model
 
-Primary state file:
-
-- `/tmp/pkg-example-e2e-state.json`
+Primary state file (path varies per lane; debusine and prebuilt promote lanes
+use their own dedicated files, debian/ubuntu share
+`/tmp/pkg-example-e2e-state.json`):
 
 It tracks:
 
-- metadata (`qli_ci_ref`, temp branch, promote mode, path toggles,
-  overall failure flags)
-- lane-level phases (`reset`, `seed`)
+- metadata (`qli_ci_ref`, promote mode, path toggles, `prepared`, local
+  `repo_dir`, overall failure flags)
+- lane-level phases (`reset`, `seed`) for `debusine`, `debian`, `ubuntu`
 - tag-level phases (`promote`, `sync`, `prbuild`, `merge`, `release`)
 - promotion PR metadata (`number`, URL, head branch, head SHA)
 
-Summary output:
+`sync` and `seed` stay unused (always `skipped`/`n/a`) for the debusine lane;
+`prbuild` holds the Debusine CI check result there instead of a PR-build run
+result (see Debusine Lane Check Contract above).
 
-- `/tmp/pkg-example-e2e-summary.md`
+Summary output path matches the state file's lane (e.g.
+`/tmp/pkg-example-e2e-summary.md` for debian/ubuntu).
 
 Rendered as a table with lane/tag rows. `reset` and `seed` are displayed on the
 first tag row per lane and as `n/a` on subsequent tag rows.
@@ -171,18 +265,20 @@ Required secret:
 
 Used for:
 
-- cloning/pushing temp branches in `pkg-example`
+- cloning `pkg-example` and rebuilding its default/packaging branches from
+  scratch on reset
 - dispatching and watching downstream workflows
 - reading/updating PRs and comments
 - merging promotion PRs
-- cleanup branch deletion
+- cleanup of the local clone
 
 No silent fallback is expected for this token.
 
 ## Downstream PR-Build Dedupe Contract
 
-`sync-pr-hook` can push a commit to the promotion PR branch. That push causes a
-`pull_request:synchronize` event in `pkg-example`.
+`sync-pr-hook` (debian/ubuntu lanes only) can push a commit to the promotion
+PR branch. That push causes a `pull_request:synchronize` event in
+`pkg-example`.
 
 To avoid stale duplicate PR Build runs:
 
@@ -191,6 +287,9 @@ To avoid stale duplicate PR Build runs:
   - `cancel-in-progress: true`
 - e2e waits for PR Build using the exact expected PR head SHA.
 - if multiple matching runs exist, the latest by `createdAt` is selected.
+
+The debusine lane has no equivalent step: `debusine-pr-hook.yml` never
+references `qli-ci`, so there is nothing to re-patch and re-push.
 
 ## Release Approval Gates
 
@@ -227,9 +326,11 @@ summaries are preserved.
 
 When validating architecture vs implementation, verify:
 
-1. Topology: global slot -> prebuilt promote lane -> Debian lane -> Ubuntu lane.
+1. Topology: global slot -> debusine lane -> prebuilt promote lane -> Debian
+   lane -> Ubuntu lane.
 2. Job-level lane gates use
-   `ENABLE_PREBUILT_PATH`/`ENABLE_DEBIAN_PATH`/`ENABLE_UBUNTU_PATH`.
+   `DISABLE_DEBUSINE_PATH`/`DISABLE_PREBUILT_PATH`/`DISABLE_DEBIAN_PATH`/`DISABLE_UBUNTU_PATH`,
+   each defaulting to enabled (`'false'`) when unset.
 3. Loop phase order matches this document.
 4. Shared state artifact handoff still exists for Debian -> Ubuntu.
 5. E2E workflow still uses cancel-in-progress concurrency.
@@ -237,10 +338,15 @@ When validating architecture vs implementation, verify:
    - Ubuntu lane does not schedule after cancellation.
    - script trap/polling checks still exit promptly on cancel signals.
 7. Prebuilt lane seeds local fixture artifacts and sets `PROMOTE_MODE=prebuilt`.
-8. PR-hook templates still define PR-level concurrency cancel-in-progress.
-9. PR-build wait still keys on PR head SHA and chooses latest run.
-10. Release wait still handles pending deployment approvals.
-11. `DEB_PKG_BOT_CI_TOKEN` remains a required contract.
-12. Post steps still run on `always()` for summary/comment/cleanup.
+8. `reset-lane` rebuilds `pkg-example`'s default branch and `qcom/debian/latest`
+   from this repo's own `pkg-workflows/*` and `test/pkg-example/*` content —
+   it must never dispatch anything that lives in `pkg-example` itself.
+9. PR-hook templates still define PR-level concurrency cancel-in-progress.
+10. PR-build wait still keys on PR head SHA and chooses latest run.
+11. Debusine check wait still polls the `Debusine CI` commit status context,
+    not a dispatched run.
+12. Release wait still handles pending deployment approvals.
+13. `DEB_PKG_BOT_CI_TOKEN` remains a required contract.
+14. Post steps still run on `always()` for summary/comment/cleanup.
 
 If any item changes intentionally, update this document in the same PR.

@@ -67,6 +67,12 @@ iso_now() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
+# Progress marker visible directly in the Actions log, so long silent polling
+# loops (dispatch/wait/find) are traceable without downloading logs.
+log() {
+  echo "[$(iso_now)] $*" >&2
+}
+
 require_cmd() {
   local cmd="$1"
   if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -127,6 +133,9 @@ state_set_meta_str() {
 mark_overall_failure() {
   local note="$1"
   local tmp
+  if [[ -n "$note" ]]; then
+    echo "::error::${note}" >&2
+  fi
   tmp="$(mktemp)"
   jq --arg note "$note" '.meta.overall_failure = true | if ($note | length) > 0 then .meta.note = $note else . end' "$STATE_FILE" > "$tmp"
   mv "$tmp" "$STATE_FILE"
@@ -428,20 +437,25 @@ rebuild_qcom_debian_latest_tree() {
 perform_repo_reset() {
   local lane="$1"
   # 1. Rebuild the default branch from scratch as a fresh orphan commit.
-  git checkout --orphan e2e-default-rebuild >/dev/null 2>&1
+  log "Rebuilding ${PKG_BASE_REF} from scratch"
+  git checkout --orphan e2e-default-rebuild >/dev/null
   git rm -rf --cached . >/dev/null 2>&1 || true
   find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
   rebuild_default_branch_tree || return 1
   git add -A
   if git diff --cached --quiet; then
-    echo "No files staged for ${PKG_BASE_REF} rebuild" >&2
+    log "No files staged for ${PKG_BASE_REF} rebuild"
     return 1
   fi
-  git commit -s -m "ci: rebuild pkg-example sandbox for e2e run" >/dev/null 2>&1
+  git commit -s -m "ci: rebuild pkg-example sandbox for e2e run" >/dev/null
   git branch -M e2e-default-rebuild "$PKG_BASE_REF"
-  git push origin "$PKG_BASE_REF" --force >/dev/null 2>&1 || return 1
+  if ! git push origin "$PKG_BASE_REF" --force; then
+    log "Failed to force-push rebuilt ${PKG_BASE_REF}"
+    return 1
+  fi
 
   # 2. Wipe all tags and ephemeral/packaging branches.
+  log "Wiping tags and qcom/*, upstream/latest, debian/pr/* branches"
   local tag
   for tag in $(git tag); do
     git push origin --delete "$tag" >/dev/null 2>&1 || true
@@ -462,19 +476,24 @@ perform_repo_reset() {
   done
 
   # 3. Recreate qcom/debian/latest as a fresh orphan branch.
-  git checkout --orphan qcom/debian/latest >/dev/null 2>&1
+  log "Recreating qcom/debian/latest"
+  git checkout --orphan qcom/debian/latest >/dev/null
   git rm -rf --cached . >/dev/null 2>&1 || true
   find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
   rebuild_qcom_debian_latest_tree "$lane" || return 1
   git add -A
   if git diff --cached --quiet; then
-    echo "No files staged for qcom/debian/latest rebuild" >&2
+    log "No files staged for qcom/debian/latest rebuild"
     return 1
   fi
-  git commit -s -m "ci: seed qcom/debian/latest for e2e run" >/dev/null 2>&1
-  git push origin --set-upstream qcom/debian/latest --force >/dev/null 2>&1 || return 1
+  git commit -s -m "ci: seed qcom/debian/latest for e2e run" >/dev/null
+  if ! git push origin --set-upstream qcom/debian/latest --force; then
+    log "Failed to force-push recreated qcom/debian/latest"
+    return 1
+  fi
 
-  git checkout "$PKG_BASE_REF" >/dev/null 2>&1
+  git checkout "$PKG_BASE_REF" >/dev/null
+  log "Reset complete"
 }
 
 LAST_RUN_ID=""
@@ -512,14 +531,17 @@ wait_for_run_conclusion() {
   local sleep_seconds="${3:-5}"
   local auto_approve_pending="${4:-false}"
 
-  local run_json status conclusion url
-  for _ in $(seq 1 "$max_attempts"); do
+  local run_json status conclusion url attempt
+  for attempt in $(seq 1 "$max_attempts"); do
     abort_if_cancelled
-    run_json="$(gh_bot run view "$run_id" -R "$PKG_REPO" --json status,conclusion,url 2>/dev/null || true)"
+    run_json="$(gh_bot run view "$run_id" -R "$PKG_REPO" --json status,conclusion,url 2>&1)" || {
+      log "Could not query run ${run_id} (attempt ${attempt}/${max_attempts}): ${run_json}"
+      run_json=""
+    }
     if [[ -n "$run_json" ]]; then
-      status="$(jq -r '.status // empty' <<<"$run_json")"
-      conclusion="$(jq -r '.conclusion // empty' <<<"$run_json")"
-      url="$(jq -r '.url // empty' <<<"$run_json")"
+      status="$(jq -r '.status // empty' <<<"$run_json" 2>/dev/null || true)"
+      conclusion="$(jq -r '.conclusion // empty' <<<"$run_json" 2>/dev/null || true)"
+      url="$(jq -r '.url // empty' <<<"$run_json" 2>/dev/null || true)"
 
       if [[ -n "$url" ]]; then
         LAST_RUN_URL="$url"
@@ -532,10 +554,15 @@ wait_for_run_conclusion() {
           LAST_RUN_CONCLUSION="failure"
         fi
 
+        log "Run ${run_id} completed with conclusion=${LAST_RUN_CONCLUSION} (${LAST_RUN_URL})"
         if [[ "$LAST_RUN_CONCLUSION" == "success" ]]; then
           return 0
         fi
         return 1
+      fi
+
+      if (( attempt == 1 || attempt % 12 == 0 )); then
+        log "Waiting for run ${run_id} (attempt ${attempt}/${max_attempts}, status=${status:-unknown})"
       fi
 
       if [[ "$auto_approve_pending" == "true" ]]; then
@@ -547,6 +574,7 @@ wait_for_run_conclusion() {
     sleep "$sleep_seconds"
   done
 
+  log "Timed out waiting for run ${run_id} to complete after ${max_attempts} attempts"
   LAST_RUN_CONCLUSION="failure"
   return 1
 }
@@ -569,25 +597,32 @@ dispatch_workflow_and_wait() {
   local start_iso
   start_iso="$(iso_now)"
 
+  log "Dispatching ${workflow} on ${branch} $*"
   if ! gh_bot workflow run "$workflow" -R "$PKG_REPO" --ref "$branch" "$@" >/dev/null; then
+    log "Failed to dispatch ${workflow} on ${branch}"
     return 1
   fi
 
-  local found=0
-  for _ in $(seq 1 80); do
+  local found=0 attempt
+  for attempt in $(seq 1 80); do
     abort_if_cancelled
     if find_dispatched_run "$workflow" "$branch" "workflow_dispatch" "$start_iso"; then
       found=1
       break
+    fi
+    if (( attempt == 1 || attempt % 10 == 0 )); then
+      log "Waiting for the dispatched ${workflow} run to appear (attempt ${attempt}/80)"
     fi
     abort_if_cancelled
     sleep 3
   done
 
   if [[ "$found" -ne 1 || -z "$LAST_RUN_ID" ]]; then
+    log "Never found a dispatched run of ${workflow} on ${branch} after dispatching it"
     return 1
   fi
 
+  log "Found run ${LAST_RUN_URL}, waiting for it to conclude"
   wait_for_run_conclusion "$LAST_RUN_ID" 360 5 "$auto_approve_pending"
 }
 
@@ -651,18 +686,24 @@ find_promotion_pr() {
     | jq -c --arg start "$start_iso" 'map(select(.createdAt >= $start and (.headRefName | startswith("debian/pr/")))) | sort_by(.createdAt) | last')"
 
   if [[ "$pr_json" == "null" || -z "$pr_json" ]]; then
+    log "No open promotion PR found targeting ${base_branch} created since ${start_iso}"
     return 1
   fi
 
   LAST_PR_NUMBER="$(jq -r '.number' <<<"$pr_json")"
   LAST_PR_URL="$(jq -r '.url' <<<"$pr_json")"
   LAST_PR_HEAD="$(jq -r '.headRefName' <<<"$pr_json")"
-  LAST_PR_HEAD_SHA="$(gh_bot pr view "$LAST_PR_NUMBER" -R "$PKG_REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null || true)"
+  LAST_PR_HEAD_SHA="$(gh_bot pr view "$LAST_PR_NUMBER" -R "$PKG_REPO" --json headRefOid --jq '.headRefOid' 2>&1)" || {
+    log "Failed to read head SHA for PR #${LAST_PR_NUMBER}: ${LAST_PR_HEAD_SHA}"
+    LAST_PR_HEAD_SHA=""
+  }
 
   if [[ -z "$LAST_PR_NUMBER" || -z "$LAST_PR_HEAD" || -z "$LAST_PR_HEAD_SHA" ]]; then
+    log "Promotion PR metadata incomplete: number=${LAST_PR_NUMBER:-<empty>} head=${LAST_PR_HEAD:-<empty>} head_sha=${LAST_PR_HEAD_SHA:-<empty>}"
     return 1
   fi
 
+  log "Found promotion PR ${LAST_PR_URL} (head ${LAST_PR_HEAD})"
   return 0
 }
 
@@ -674,8 +715,10 @@ wait_for_pr_build() {
   LAST_RUN_URL=""
   LAST_RUN_CONCLUSION="failure"
 
-  local found=0
-  for _ in $(seq 1 100); do
+  log "Waiting for a PR Build run on ${pr_branch} matching head SHA ${pr_head_sha}"
+
+  local found=0 attempt
+  for attempt in $(seq 1 100); do
     abort_if_cancelled
     local run_json
     run_json="$(gh_bot run list \
@@ -694,14 +737,20 @@ wait_for_pr_build() {
       break
     fi
 
+    if (( attempt == 1 || attempt % 12 == 0 )); then
+      log "Still waiting for a PR Build run on ${pr_branch} (attempt ${attempt}/100)"
+    fi
+
     abort_if_cancelled
     sleep 5
   done
 
   if [[ "$found" -ne 1 || -z "$LAST_RUN_ID" ]]; then
+    log "Never found a PR Build run on ${pr_branch} matching head SHA ${pr_head_sha}"
     return 1
   fi
 
+  log "Found PR Build run ${LAST_RUN_URL}, waiting for it to conclude"
   wait_for_run_conclusion "$LAST_RUN_ID" 360 5
 }
 
@@ -717,22 +766,38 @@ wait_for_debusine_check() {
   local max_attempts="${2:-360}"
   local sleep_seconds="${3:-5}"
 
-  local status_json status
-  for _ in $(seq 1 "$max_attempts"); do
+  log "Waiting for the ${DEBUSINE_CHECK_CONTEXT} commit status on ${pr_head_sha}"
+
+  local status_json status attempt
+  for attempt in $(seq 1 "$max_attempts"); do
     abort_if_cancelled
-    status_json="$(gh_bot api "/repos/${PKG_REPO}/commits/${pr_head_sha}/status" 2>/dev/null || true)"
+    status_json="$(gh_bot api "/repos/${PKG_REPO}/commits/${pr_head_sha}/status" 2>&1)" || {
+      log "Could not query commit status for ${pr_head_sha} (attempt ${attempt}/${max_attempts}): ${status_json}"
+      status_json=""
+    }
     if [[ -n "$status_json" ]]; then
-      status="$(jq -r --arg ctx "$DEBUSINE_CHECK_CONTEXT" '[.statuses[]? | select(.context == $ctx)] | first | .state // empty' <<<"$status_json")"
+      status="$(jq -r --arg ctx "$DEBUSINE_CHECK_CONTEXT" '[.statuses[]? | select(.context == $ctx)] | first | .state // empty' <<<"$status_json" 2>/dev/null || true)"
       case "$status" in
-        success) return 0 ;;
-        failure|error) return 1 ;;
+        success)
+          log "${DEBUSINE_CHECK_CONTEXT} succeeded for ${pr_head_sha}"
+          return 0
+          ;;
+        failure|error)
+          log "${DEBUSINE_CHECK_CONTEXT} concluded ${status} for ${pr_head_sha}"
+          return 1
+          ;;
       esac
+    fi
+
+    if (( attempt == 1 || attempt % 12 == 0 )); then
+      log "Still waiting for ${DEBUSINE_CHECK_CONTEXT} on ${pr_head_sha} (attempt ${attempt}/${max_attempts}, current status=${status:-none yet})"
     fi
 
     abort_if_cancelled
     sleep "$sleep_seconds"
   done
 
+  log "Timed out waiting for ${DEBUSINE_CHECK_CONTEXT} on ${pr_head_sha} after ${max_attempts} attempts"
   return 1
 }
 
@@ -740,22 +805,29 @@ merge_promotion_pr() {
   local pr_number="$1"
   local merge_output
 
-  for _ in $(seq 1 12); do
+  log "Merging promotion PR #${pr_number}"
+
+  local attempt
+  for attempt in $(seq 1 12); do
     abort_if_cancelled
     # If merge command itself succeeds, treat that as final success.
     if merge_output="$(gh_bot pr merge "$pr_number" -R "$PKG_REPO" --merge 2>&1)"; then
+      log "Merged PR #${pr_number}"
       return 0
     fi
 
     # Idempotent retries: another attempt might have already merged the PR.
     if [[ "$merge_output" == *"already merged"* ]]; then
+      log "PR #${pr_number} was already merged"
       return 0
     fi
 
     # Fallback probe when API metadata is available.
     if [[ "$(gh_bot pr view "$pr_number" -R "$PKG_REPO" --json merged --jq '.merged' 2>/dev/null || echo "false")" == "true" ]]; then
+      log "PR #${pr_number} shows as merged on retry check"
       return 0
     fi
+    log "Merge attempt ${attempt}/12 for PR #${pr_number} failed: ${merge_output}"
     abort_if_cancelled
     sleep 10
   done
@@ -906,7 +978,8 @@ cmd_prepare_repo() {
 
   rm -rf "$repo_dir"
 
-  if ! git clone "https://x-access-token:${BOT_TOKEN}@github.com/${PKG_REPO}.git" "$repo_dir" >/dev/null 2>&1; then
+  log "Cloning ${PKG_REPO} into ${repo_dir}"
+  if ! git clone "https://x-access-token:${BOT_TOKEN}@github.com/${PKG_REPO}.git" "$repo_dir" >/dev/null; then
     mark_overall_failure "Failed to clone ${PKG_REPO}"
     return 1
   fi
@@ -1000,6 +1073,7 @@ cmd_seed_ubuntu() {
     return 1
   fi
 
+  log "Seeding qcom/ubuntu/resolute from qcom/debian/latest"
   (
     cd "$repo_dir"
     git fetch origin qcom/debian/latest >/dev/null 2>&1
@@ -1045,6 +1119,8 @@ cmd_seed_prebuilt_fixtures() {
   fi
 
   require_cmd tar
+
+  log "Seeding prebuilt fixtures for ${lane}"
 
   local prebuilt_fixture_cc
   if ! prebuilt_fixture_cc="$(resolve_prebuilt_fixture_compiler)"; then

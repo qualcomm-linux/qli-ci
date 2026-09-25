@@ -285,7 +285,7 @@ jobs:
   prebuilt-promote-lane:
     name: pkg-example e2e (prebuilt promote lane)
     needs: [global-lock, debusine-lane]
-    if: ${{ !cancelled() && always() && vars.ENABLE_PREBUILT_PATH != '0' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.debusine-lane.result) }}
+    if: ${{ !cancelled() && always() && (vars.DISABLE_PREBUILT_PATH || 'false') != 'true' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.debusine-lane.result) }}
     runs-on: ubuntu-latest
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-prebuilt-summary.md
@@ -472,13 +472,13 @@ jobs:
   debian-lane:
     name: pkg-example e2e (debian lane)
     needs: [global-lock, prebuilt-promote-lane]
-    if: ${{ !cancelled() && always() && vars.ENABLE_DEBIAN_PATH == '1' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.prebuilt-promote-lane.result) }}
+    if: ${{ !cancelled() && always() && (vars.DISABLE_DEBIAN_PATH || 'false') != 'true' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.prebuilt-promote-lane.result) }}
     runs-on: ubuntu-latest
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-summary.md
       STATE_FILE: /tmp/pkg-example-e2e-state.json
-      ENABLE_DEBIAN_PATH: ${{ vars.ENABLE_DEBIAN_PATH }}
-      ENABLE_UBUNTU_PATH: ${{ vars.ENABLE_UBUNTU_PATH }}
+      ENABLE_DEBIAN_PATH: ${{ (vars.DISABLE_DEBIAN_PATH || 'false') == 'true' && '0' || '1' }}
+      ENABLE_UBUNTU_PATH: ${{ (vars.DISABLE_UBUNTU_PATH || 'false') == 'true' && '0' || '1' }}
       PROMOTE_MODE: source
 
     steps:
@@ -651,12 +651,12 @@ jobs:
     name: pkg-example e2e (ubuntu lane)
     runs-on: ubuntu-latest
     needs: [global-lock, debian-lane]
-    if: ${{ !cancelled() && always() && vars.ENABLE_UBUNTU_PATH == '1' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.debian-lane.result) }}
+    if: ${{ !cancelled() && always() && (vars.DISABLE_UBUNTU_PATH || 'false') != 'true' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.debian-lane.result) }}
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-summary.md
       STATE_FILE: /tmp/pkg-example-e2e-state.json
-      ENABLE_DEBIAN_PATH: ${{ vars.ENABLE_DEBIAN_PATH }}
-      ENABLE_UBUNTU_PATH: ${{ vars.ENABLE_UBUNTU_PATH }}
+      ENABLE_DEBIAN_PATH: ${{ (vars.DISABLE_DEBIAN_PATH || 'false') == 'true' && '0' || '1' }}
+      ENABLE_UBUNTU_PATH: ${{ (vars.DISABLE_UBUNTU_PATH || 'false') == 'true' && '0' || '1' }}
       PROMOTE_MODE: source
 
     steps:

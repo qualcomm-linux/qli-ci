@@ -9,7 +9,7 @@ sync, and to make architecture changes reviewable in PRs.
 Current scope is the `pkg-example` loop test implemented by:
 
 - `.github/workflows/pkg-example-e2e-loop.yml`
-- `scripts/pkg_example_e2e_loop.sh`
+- `test/pkg-example/pkg_example_e2e_loop.sh`
 
 The suite validates that a given `qli-ci` ref works across the package
 lifecycle loop:
@@ -52,7 +52,7 @@ Cancellation behavior is part of the e2e contract:
   - Ubuntu lane is guarded so it does not start when the overall run is in
     cancelled state.
 - script/runtime level:
-  - `scripts/pkg_example_e2e_loop.sh` traps `SIGINT` and `SIGTERM`.
+  - `test/pkg-example/pkg_example_e2e_loop.sh` traps `SIGINT` and `SIGTERM`.
   - long polling/retry loops check cancellation and exit immediately.
 
 Expected behavior:
@@ -116,7 +116,7 @@ keeps only the normal `Ubuntu Production` environment gate.
 ## Operational Flow
 
 The workflow invokes explicit phase commands from
-`scripts/pkg_example_e2e_loop.sh` so each stage is visible in GitHub UI.
+`test/pkg-example/pkg_example_e2e_loop.sh` so each stage is visible in GitHub UI.
 
 Per enabled lane:
 

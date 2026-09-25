@@ -127,15 +127,15 @@ decision to bring them back:
 
 Source of truth for test architecture:
 
-- `docs/TESTS.instructions.md`
+- `test/pkg-example/TESTS.instructions.md`
 
 Core implementation entrypoints:
 
 - `.github/workflows/pkg-example-e2e-loop.yml`
-- `scripts/pkg_example_e2e_loop.sh`
+- `test/pkg-example/pkg_example_e2e_loop.sh`
 
 Keep architecture details, invariants, and drift-check rules in
-`docs/TESTS.instructions.md` and update that document in the same PR whenever
+`test/pkg-example/TESTS.instructions.md` and update that document in the same PR whenever
 the test flow contract changes.
 
 ## Editing Guidance

@@ -1,0 +1,74 @@
+name: pkg-example Reset
+
+description: |
+  Resets qualcomm-linux/pkg-example to a clean state without running the
+  full e2e loop test. Rebuilds pkg-example's default branch and
+  qcom/debian/latest packaging branch from this repo's own
+  test/pkg-example/ fixtures and pkg-workflows/* templates, and deletes all
+  tags and qcom/*, upstream/latest, and debian/pr/* branches. Uses the same
+  reset logic as the e2e loop's own reset-lane step.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: |
+          Tick to confirm resetting qualcomm-linux/pkg-example. This
+          rewrites its default branch and packaging branches from scratch.
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  reset:
+    name: Reset pkg-example
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirmation
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [[ "$CONFIRMATION" != "true" ]]; then
+            echo "❌ You have to tick the confirmation box"
+            exit 1
+          fi
+
+      - name: Checkout qli-ci
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Initialize e2e state
+        env:
+          QLI_CI_REF: ${{ github.sha }}
+          ENABLE_DEBIAN_PATH: "1"
+          ENABLE_UBUNTU_PATH: "1"
+        run: |
+          set -euo pipefail
+          ./test/pkg-example/pkg_example_e2e_loop.sh init
+
+      - name: Prepare pkg-example clone
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-repo
+
+      - name: Reset pkg-example
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          ./test/pkg-example/pkg_example_e2e_loop.sh reset-lane debian
+
+      - name: Cleanup workspace
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          ./test/pkg-example/pkg_example_e2e_loop.sh cleanup

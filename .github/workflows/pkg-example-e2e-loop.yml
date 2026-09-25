@@ -162,7 +162,7 @@ jobs:
           set -euo pipefail
           ./test/pkg-example/pkg_example_e2e_loop.sh init
 
-      - name: Prepare temp pkg-example branch
+      - name: Prepare pkg-example clone
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
@@ -170,11 +170,12 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-temp-branch
+          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-repo
 
       - name: Prebuilt reset (ubuntu lane)
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
@@ -269,7 +270,7 @@ jobs:
             echo "No summary was generated." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Cleanup temp branch and workspace
+      - name: Cleanup workspace
         if: ${{ always() }}
         continue-on-error: true
         env:
@@ -347,7 +348,7 @@ jobs:
           set -euo pipefail
           ./test/pkg-example/pkg_example_e2e_loop.sh init
 
-      - name: Prepare temp pkg-example branch
+      - name: Prepare pkg-example clone
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
@@ -355,11 +356,12 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-temp-branch
+          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-repo
 
       - name: Debian reset
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
@@ -533,7 +535,7 @@ jobs:
           set -euo pipefail
           ./test/pkg-example/pkg_example_e2e_loop.sh init
 
-      - name: Prepare temp pkg-example branch
+      - name: Prepare pkg-example clone
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
@@ -541,11 +543,12 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-temp-branch
+          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-repo
 
       - name: Ubuntu reset
         env:
           BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
@@ -703,7 +706,7 @@ jobs:
               | gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --method POST --input - >/dev/null
           fi
 
-      - name: Cleanup temp branch and workspace
+      - name: Cleanup workspace
         if: ${{ always() }}
         continue-on-error: true
         env:

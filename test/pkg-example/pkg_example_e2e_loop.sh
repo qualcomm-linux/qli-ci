@@ -18,10 +18,24 @@ ENABLE_DEBIAN_PATH_RAW="${ENABLE_DEBIAN_PATH:-1}"
 ENABLE_UBUNTU_PATH_RAW="${ENABLE_UBUNTU_PATH:-1}"
 PROMOTE_MODE="${PROMOTE_MODE:-source}"
 
+# Root of this qli-ci checkout, so reset logic can source fixtures/templates
+# by absolute path regardless of which directory it's operating in (it cds
+# into a separate pkg-example clone for most of its work).
+QLI_CI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
 TAGS=("v1.0.0" "v1.1.0")
 PREBUILT_TAGS=("v1.0.0")
 PREBUILT_DISTRO="resolute"
 PREBUILT_FIXTURE_ROOT=".e2e-prebuilt-fixtures"
+
+# pkg-example's default branch caller workflows with a 1:1 qli-ci template.
+DEFAULT_BRANCH_CALLER_FILES=(
+  pkg-build.yml
+  pkg-pr-hook.yml
+  pkg-promote.yml
+  pkg-promote-prebuilt.yml
+  pkg-release.yml
+)
 
 CANCEL_SIGNALLED=0
 
@@ -336,6 +350,130 @@ patch_qli_ref_file() {
     "$file"
 }
 
+# Populates the current (empty) working tree with pkg-example's default
+# branch content, sourced from this qli-ci checkout so it always reflects
+# the ref under test. Must be called from inside the pkg-example clone.
+rebuild_default_branch_tree() {
+  mkdir -p .github/workflows
+
+  local wf
+  for wf in "${DEFAULT_BRANCH_CALLER_FILES[@]}"; do
+    cp "${QLI_CI_ROOT}/pkg-workflows/qli-ci/${wf}" ".github/workflows/${wf}"
+    patch_qli_ref_file ".github/workflows/${wf}"
+  done
+
+  # pkg-example-specific, not a qli-ci template, but still calls back into
+  # qli-ci reusable workflows so it needs the same ref patch.
+  cp "${QLI_CI_ROOT}/test/pkg-example/pkg-pr-build-check.yml" .github/workflows/pkg-pr-build-check.yml
+  patch_qli_ref_file .github/workflows/pkg-pr-build-check.yml
+
+  # Debusine default-branch set. These call debusine-action, not qli-ci, so
+  # there is no ref to patch: copying verbatim from this checkout already
+  # reflects the ref under test.
+  cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-daily.yml" .github/workflows/debusine-daily.yml
+  cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-check.yml" .github/workflows/debusine-pr-check.yml
+  cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
+
+  # debusine-release.yml is dispatched against qcom/debian/latest, not this
+  # branch, but workflow_dispatch requires the workflow file to exist on the
+  # repository's actual default branch to be dispatchable via the API at
+  # all, regardless of --ref. Seed it here too for that reason alone.
+  cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
+}
+
+# Populates the current (empty) working tree with the qcom/debian/latest
+# packaging-branch content. Must be called from inside the pkg-example
+# clone.
+#
+# Deliberately lane-specific: the debusine lane borrows pkg-promote to open
+# its promotion PR (no debusine-specific promote flow exists yet), but its
+# PR build must stay on the standalone debusine-pr-hook.yml/
+# debusine-pr-check.yml split - seeding pkg-pr-hook.yml there too would make
+# every debusine-lane promotion PR also trigger
+# pkg-build-reusable-workflow.yml, which is what the debian lane exists to
+# validate. Once the debusine flow folds into the pkg-* flow this branching
+# goes away, but both still need coverage in the meantime.
+rebuild_qcom_debian_latest_tree() {
+  local lane="$1"
+  local template_src="${QLI_CI_ROOT}/test/pkg-example/debian"
+  if [[ ! -d "$template_src" ]] || [[ -z "$(find "$template_src" -mindepth 1 -print -quit)" ]]; then
+    echo "Missing or empty Debian fixture directory: ${template_src}" >&2
+    return 1
+  fi
+
+  mkdir -p debian .github/workflows
+  cp -a "${template_src}/." debian/
+  chmod +x debian/rules
+
+  if [[ "$lane" == "debusine" ]]; then
+    # Standalone debusine-*.yml set only, no qli-ci ref to patch (see
+    # comment in rebuild_default_branch_tree above): these call
+    # debusine-action, not qli-ci.
+    cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-hook.yml" .github/workflows/debusine-pr-hook.yml
+    cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
+    cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
+  else
+    cp "${QLI_CI_ROOT}/pkg-workflows/debian/pkg-pr-hook.yml" .github/workflows/pkg-pr-hook.yml
+    patch_qli_ref_file .github/workflows/pkg-pr-hook.yml
+  fi
+}
+
+# Wipes and rebuilds pkg-example from scratch: the default branch
+# ($PKG_BASE_REF), all tags, and all qcom/*, upstream/latest and debian/pr/*
+# branches, then reseeds qcom/debian/latest. Must be called from inside the
+# pkg-example clone (repo_dir), with origin already configured for push.
+perform_repo_reset() {
+  local lane="$1"
+  # 1. Rebuild the default branch from scratch as a fresh orphan commit.
+  git checkout --orphan e2e-default-rebuild >/dev/null 2>&1
+  git rm -rf --cached . >/dev/null 2>&1 || true
+  find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
+  rebuild_default_branch_tree || return 1
+  git add -A
+  if git diff --cached --quiet; then
+    echo "No files staged for ${PKG_BASE_REF} rebuild" >&2
+    return 1
+  fi
+  git commit -s -m "ci: rebuild pkg-example sandbox for e2e run" >/dev/null 2>&1
+  git branch -M e2e-default-rebuild "$PKG_BASE_REF"
+  git push origin "$PKG_BASE_REF" --force >/dev/null 2>&1 || return 1
+
+  # 2. Wipe all tags and ephemeral/packaging branches.
+  local tag
+  for tag in $(git tag); do
+    git push origin --delete "$tag" >/dev/null 2>&1 || true
+  done
+
+  git push origin --delete upstream/latest >/dev/null 2>&1 || true
+  local branch
+  for branch in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin/qcom); do
+    git push origin --delete "$branch" >/dev/null 2>&1 || true
+  done
+  for branch in $(git branch -r | grep 'origin/debian/pr/' | sed 's|origin/||'); do
+    git push origin --delete "$branch" >/dev/null 2>&1 || true
+  done
+
+  git branch -D upstream/latest >/dev/null 2>&1 || true
+  for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/qcom); do
+    git branch -D "$branch" >/dev/null 2>&1 || true
+  done
+
+  # 3. Recreate qcom/debian/latest as a fresh orphan branch.
+  git checkout --orphan qcom/debian/latest >/dev/null 2>&1
+  git rm -rf --cached . >/dev/null 2>&1 || true
+  find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
+  rebuild_qcom_debian_latest_tree "$lane" || return 1
+  git add -A
+  if git diff --cached --quiet; then
+    echo "No files staged for qcom/debian/latest rebuild" >&2
+    return 1
+  fi
+  git commit -s -m "ci: seed qcom/debian/latest for e2e run" >/dev/null 2>&1
+  git push origin --set-upstream qcom/debian/latest --force >/dev/null 2>&1 || return 1
+
+  git checkout "$PKG_BASE_REF" >/dev/null 2>&1
+}
+
 LAST_RUN_ID=""
 LAST_RUN_URL=""
 LAST_RUN_CONCLUSION=""
@@ -604,22 +742,13 @@ cmd_init() {
     return 1
   fi
 
-  local ref_short temp_branch
   local enable_debian enable_ubuntu
-  ref_short="$(printf '%s' "$QLI_CI_REF" | cut -c1-8)"
   enable_debian="$(normalize_bool "$ENABLE_DEBIAN_PATH_RAW")"
   enable_ubuntu="$(normalize_bool "$ENABLE_UBUNTU_PATH_RAW")"
-
-  if [[ -n "$QLI_CI_PR_NUMBER" ]]; then
-    temp_branch="ci/qli-loop/pr-${QLI_CI_PR_NUMBER}-${ref_short}"
-  else
-    temp_branch="ci/qli-loop/run-${RUN_ID_FALLBACK}-${ref_short}"
-  fi
 
   jq -n \
     --arg qli_ref "$QLI_CI_REF" \
     --arg qli_pr "$QLI_CI_PR_NUMBER" \
-    --arg temp_branch "$temp_branch" \
     --arg promote_mode "$PROMOTE_MODE" \
     --arg summary "$SUMMARY_FILE" \
     --arg skip "$IS_FORK_PR" \
@@ -629,7 +758,6 @@ cmd_init() {
       meta: {
         qli_ci_ref: $qli_ref,
         qli_ci_pr_number: $qli_pr,
-        temp_branch: $temp_branch,
         promote_mode: $promote_mode,
         summary_file: $summary,
         skip: ($skip == "true"),
@@ -694,12 +822,11 @@ cmd_init() {
     state_set_meta_str "note" "Path toggles: ENABLE_DEBIAN_PATH=${enable_debian}, ENABLE_UBUNTU_PATH=${enable_ubuntu}"
   fi
 
-  write_output "temp_branch" "$temp_branch"
   write_output "summary_file" "$SUMMARY_FILE"
   return 0
 }
 
-cmd_prepare_temp_branch() {
+cmd_prepare_repo() {
   ensure_state
 
   if [[ "$(state_get '.meta.skip')" == "true" ]]; then
@@ -711,12 +838,11 @@ cmd_prepare_temp_branch() {
   fi
 
   if [[ -z "$BOT_TOKEN" ]]; then
-    mark_overall_failure "BOT_TOKEN is required to prepare temp branch"
+    mark_overall_failure "BOT_TOKEN is required to prepare pkg-example clone"
     return 1
   fi
 
-  local temp_branch repo_dir
-  temp_branch="$(state_get '.meta.temp_branch')"
+  local repo_dir
   repo_dir="/tmp/pkg-example-e2e-${RUN_ID_FALLBACK}-${RANDOM}"
 
   rm -rf "$repo_dir"
@@ -728,40 +854,14 @@ cmd_prepare_temp_branch() {
 
   (
     cd "$repo_dir"
-
     git config user.name "GitHub Service Bot"
     git config user.email "githubservice@qti.qualcomm.com"
     git remote set-url origin "https://x-access-token:${BOT_TOKEN}@github.com/${PKG_REPO}.git"
-
-    git fetch origin "$PKG_BASE_REF" >/dev/null 2>&1
-    git checkout -B "$temp_branch" "origin/$PKG_BASE_REF" >/dev/null 2>&1
-
-    local files_to_patch=(
-      .github/workflows/pkg-build.yml
-      .github/workflows/pkg-promote.yml
-      .github/workflows/pkg-release.yml
-      .github/workflows/pkg-promote-prebuilt.yml
-      .github/workflows/pkg-pr-build-check.yml
-      .github/workflows/pkg-pr-hook.yml
-    )
-
-    for wf in "${files_to_patch[@]}"; do
-      if [[ -f "$wf" ]]; then
-        patch_qli_ref_file "$wf"
-      fi
-    done
-
-    if ! git diff --quiet; then
-      git add .github/workflows
-      git commit -s -m "ci: pin pkg-example workflows to qli-ci ref ${QLI_CI_REF}" >/dev/null 2>&1 || true
-    fi
-
-    git push origin "HEAD:refs/heads/${temp_branch}" --force >/dev/null 2>&1
   )
   rc=$?
 
   if [[ "$rc" -ne 0 ]]; then
-    mark_overall_failure "Failed preparing temp branch ${temp_branch}"
+    mark_overall_failure "Failed preparing pkg-example clone"
     return 1
   fi
 
@@ -789,15 +889,27 @@ cmd_reset_lane() {
     return 0
   fi
 
-  local temp_branch
-  temp_branch="$(state_get '.meta.temp_branch')"
+  local repo_dir
+  repo_dir="$(state_get '.meta.repo_dir')"
 
-  if dispatch_workflow_and_wait .github/workflows/reset-repo.yml "$temp_branch" -f confirmation=true; then
-    set_lane_phase "$lane" "reset" "success" "$LAST_RUN_URL"
+  if [[ -z "$repo_dir" || ! -d "$repo_dir" ]]; then
+    set_lane_phase "$lane" "reset" "failure" ""
+    mark_overall_failure "Missing local repo clone during reset for lane ${lane}"
+    return 1
+  fi
+
+  (
+    cd "$repo_dir"
+    perform_repo_reset "$lane"
+  )
+  rc=$?
+
+  if [[ "$rc" -eq 0 ]]; then
+    set_lane_phase "$lane" "reset" "success" "https://github.com/${PKG_REPO}/tree/${PKG_BASE_REF}"
     return 0
   fi
 
-  set_lane_phase "$lane" "reset" "failure" "$LAST_RUN_URL"
+  set_lane_phase "$lane" "reset" "failure" "https://github.com/${PKG_REPO}/branches"
   mark_overall_failure "Reset failed for lane ${lane}"
   return 1
 }
@@ -834,7 +946,7 @@ cmd_seed_ubuntu() {
     git fetch origin qcom/debian/latest >/dev/null 2>&1
     git checkout -B qcom/ubuntu/resolute origin/qcom/debian/latest >/dev/null 2>&1
     git push origin HEAD:refs/heads/qcom/ubuntu/resolute --force >/dev/null 2>&1
-    git checkout "$(state_get '.meta.temp_branch')" >/dev/null 2>&1
+    git checkout "$PKG_BASE_REF" >/dev/null 2>&1
   )
   rc=$?
 
@@ -881,10 +993,9 @@ cmd_seed_prebuilt_fixtures() {
     return 1
   fi
 
-  local lane_branch_value repo_dir temp_branch initial_tag initial_package
+  local lane_branch_value repo_dir initial_tag initial_package
   lane_branch_value="$(lane_branch "$lane")"
   repo_dir="$(state_get '.meta.repo_dir')"
-  temp_branch="$(state_get '.meta.temp_branch')"
   initial_tag="bootstrap"
   initial_package="$(prebuilt_package_name_for_tag "${PREBUILT_TAGS[0]}")"
 
@@ -917,7 +1028,7 @@ EOF
       git push origin "HEAD:refs/heads/${lane_branch_value}" >/dev/null 2>&1
     fi
 
-    git checkout "$temp_branch" >/dev/null 2>&1
+    git checkout "$PKG_BASE_REF" >/dev/null 2>&1
   )
   rc=$?
 
@@ -964,13 +1075,13 @@ cmd_promote_tag() {
     new_package_name="$(prebuilt_package_name_for_tag "$tag")"
     new_debian_version="$(prebuilt_debian_version_for_tag "$tag")"
 
-    if ! dispatch_workflow_and_wait .github/workflows/pkg-promote-prebuilt.yml "$(state_get '.meta.temp_branch')" -f debian-branch="$lane_branch" -f new-tag="$tag" -f new-package-name="$new_package_name" -f new-debian-version="$new_debian_version"; then
+    if ! dispatch_workflow_and_wait .github/workflows/pkg-promote-prebuilt.yml "$PKG_BASE_REF" -f debian-branch="$lane_branch" -f new-tag="$tag" -f new-package-name="$new_package_name" -f new-debian-version="$new_debian_version"; then
       set_tag_phase "$lane" "$tag" "promote" "failure" "$LAST_RUN_URL"
       mark_overall_failure "Promote (${mode}) failed for ${lane} ${tag}"
       return 1
     fi
   elif [[ "$mode" == "source" ]]; then
-    if ! dispatch_workflow_and_wait .github/workflows/pkg-promote.yml "$(state_get '.meta.temp_branch')" -f debian-branch="$lane_branch" -f upstream-tag="$tag"; then
+    if ! dispatch_workflow_and_wait .github/workflows/pkg-promote.yml "$PKG_BASE_REF" -f debian-branch="$lane_branch" -f upstream-tag="$tag"; then
       set_tag_phase "$lane" "$tag" "promote" "failure" "$LAST_RUN_URL"
       mark_overall_failure "Promote (${mode}) failed for ${lane} ${tag}"
       return 1
@@ -1042,7 +1153,7 @@ cmd_sync_pr_hook() {
     refreshed_sha_local="$(git rev-parse HEAD)"
     printf '%s' "$refreshed_sha_local" > "$refreshed_sha_file"
 
-    git checkout "$(state_get '.meta.temp_branch')" >/dev/null 2>&1
+    git checkout "$PKG_BASE_REF" >/dev/null 2>&1
   )
   rc=$?
 
@@ -1116,7 +1227,7 @@ cmd_wait_pr_build() {
     return 0
   fi
 
-  set_tag_phase "$lane" "$tag" "prbuild" "failure" "${LAST_RUN_URL:-$(state_get ".lanes[\"$lane\"].tags[\"$tag\"].pr.url")}" 
+  set_tag_phase "$lane" "$tag" "prbuild" "failure" "${LAST_RUN_URL:-$(state_get ".lanes[\"$lane\"].tags[\"$tag\"].pr.url")}"
   mark_overall_failure "PR build failed for ${lane} ${tag}"
   return 1
 }
@@ -1184,7 +1295,7 @@ cmd_release_tag() {
   local lane_branch
   lane_branch="$(lane_branch "$lane")"
 
-  if dispatch_workflow_and_wait .github/workflows/pkg-release.yml "$(state_get '.meta.temp_branch')" --auto-approve-pending-deployments -f debian-branch="$lane_branch"; then
+  if dispatch_workflow_and_wait .github/workflows/pkg-release.yml "$PKG_BASE_REF" --auto-approve-pending-deployments -f debian-branch="$lane_branch"; then
     set_tag_phase "$lane" "$tag" "release" "success" "$LAST_RUN_URL"
     return 0
   fi
@@ -1215,10 +1326,9 @@ cmd_curate_ubuntu_wip_after_first_release() {
     return 1
   fi
 
-  local repo_dir ubuntu_branch temp_branch
+  local repo_dir ubuntu_branch
   repo_dir="$(state_get '.meta.repo_dir')"
   ubuntu_branch="$(lane_branch "ubuntu")"
-  temp_branch="$(state_get '.meta.temp_branch')"
 
   if [[ -z "$repo_dir" || ! -d "$repo_dir" ]]; then
     mark_overall_failure "Missing local repo clone during ubuntu changelog curation"
@@ -1252,7 +1362,7 @@ cmd_curate_ubuntu_wip_after_first_release() {
 
     if grep -q 'WIP' debian/changelog; then
       echo "Unable to clear WIP marker from ubuntu changelog entry" >&2
-      git checkout "$temp_branch" >/dev/null 2>&1
+      git checkout "$PKG_BASE_REF" >/dev/null 2>&1
       exit 1
     fi
 
@@ -1262,7 +1372,7 @@ cmd_curate_ubuntu_wip_after_first_release() {
       git push origin "HEAD:refs/heads/${ubuntu_branch}" >/dev/null 2>&1
     fi
 
-    git checkout "$temp_branch" >/dev/null 2>&1
+    git checkout "$PKG_BASE_REF" >/dev/null 2>&1
   )
   rc=$?
 
@@ -1286,11 +1396,10 @@ cmd_write_summary() {
     overall_status="success"
   fi
 
-  local qli_ci_ref qli_ci_pr_number temp_branch note promote_mode
+  local qli_ci_ref qli_ci_pr_number note promote_mode
   local enable_debian enable_ubuntu
   qli_ci_ref="$(state_get '.meta.qli_ci_ref')"
   qli_ci_pr_number="$(state_get '.meta.qli_ci_pr_number')"
-  temp_branch="$(state_get '.meta.temp_branch')"
   promote_mode="$(state_get '.meta.promote_mode')"
   note="$(state_get '.meta.note')"
   enable_debian="$(state_get '.meta.enable_debian')"
@@ -1303,7 +1412,7 @@ cmd_write_summary() {
     if [[ -n "$qli_ci_pr_number" ]]; then
       echo "- qli-ci PR: #$qli_ci_pr_number"
     fi
-    echo "- pkg-example temp branch: \`$temp_branch\`"
+    echo "- pkg-example is rebuilt from scratch on \`$PKG_BASE_REF\` each run"
     echo "- promote mode: \`$promote_mode\`"
     echo "- path toggles: debian=${enable_debian}, ubuntu=${enable_ubuntu}"
     echo "- result: **$overall_status**"
@@ -1355,19 +1464,8 @@ cmd_write_summary() {
 cmd_cleanup() {
   ensure_state
 
-  local repo_dir temp_branch
+  local repo_dir
   repo_dir="$(state_get '.meta.repo_dir')"
-  temp_branch="$(state_get '.meta.temp_branch')"
-
-  if [[ -n "$BOT_TOKEN" && -n "$temp_branch" && "$(state_get '.meta.skip')" != "true" ]]; then
-    if [[ -n "$repo_dir" && -d "$repo_dir" ]]; then
-      (
-        cd "$repo_dir"
-        git remote set-url origin "https://x-access-token:${BOT_TOKEN}@github.com/${PKG_REPO}.git"
-        git push origin --delete "$temp_branch" >/dev/null 2>&1 || true
-      ) || true
-    fi
-  fi
 
   if [[ -n "$repo_dir" && -d "$repo_dir" ]]; then
     rm -rf "$repo_dir"
@@ -1394,7 +1492,7 @@ usage() {
   cat <<USAGE
 Usage:
   $0 init
-  $0 prepare-temp-branch
+  $0 prepare-repo
   $0 reset-lane <debian|ubuntu>
   $0 seed-ubuntu
   $0 seed-prebuilt-fixtures [ubuntu]
@@ -1416,8 +1514,8 @@ main() {
     init)
       cmd_init
       ;;
-    prepare-temp-branch)
-      cmd_prepare_temp_branch
+    prepare-repo)
+      cmd_prepare_repo
       ;;
     reset-lane)
       shift

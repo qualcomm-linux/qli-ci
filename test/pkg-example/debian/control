@@ -1,0 +1,19 @@
+Source: libqcom-example
+Section: libs
+Priority: optional
+Maintainer: Simon Beaudoin <sbeaudoi@qti.qualcomm.com>
+Build-Depends: debhelper (>= 13)
+Standards-Version: 4.6.2
+
+Package: libqcom-example1
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Example package
+ This is an example package to demonstrate the Qualcomm OSS development flow
+
+Package: libqcom-example-dev
+Section: libdevel
+Architecture: any
+Depends: libqcom-example1 (= ${binary:Version}), ${misc:Depends}
+Description: Example package
+ This is an example package to demonstrate the Qualcomm OSS development flow

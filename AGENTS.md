@@ -123,19 +123,30 @@ decision to bring them back:
 
 ## pkg-example End-to-End Test Suite
 
-`qli-ci` owns a dedicated `pkg-example` loop test.
+`qli-ci` owns a dedicated `pkg-example` loop test. `pkg-example` itself is a
+fully disposable sandbox: every lane rebuilds its default branch and
+`qcom/debian/latest` from scratch from this repo's own `pkg-workflows/*`
+templates and `test/pkg-example/*` fixtures, and never depends on anything
+committed in `pkg-example`. Lanes run in order: debusine, prebuilt promote,
+Debian, Ubuntu.
 
 Source of truth for test architecture:
 
-- `docs/TESTS.instructions.md`
+- `test/pkg-example/TESTS.instructions.md`
 
 Core implementation entrypoints:
 
 - `.github/workflows/pkg-example-e2e-loop.yml`
-- `scripts/pkg_example_e2e_loop.sh`
+- `.github/workflows/pkg-example-reset.yml` (standalone human-triggerable
+  reset, reusing the same reset logic)
+- `test/pkg-example/pkg_example_e2e_loop.sh`
+- `test/pkg-example/debian/` (Debian packaging metadata fixture, seeded onto
+  `qcom/debian/latest` on every reset)
+- `test/pkg-example/pkg-pr-build-check.yml` (pkg-example-specific default
+  branch fixture)
 
 Keep architecture details, invariants, and drift-check rules in
-`docs/TESTS.instructions.md` and update that document in the same PR whenever
+`test/pkg-example/TESTS.instructions.md` and update that document in the same PR whenever
 the test flow contract changes.
 
 ## Editing Guidance

@@ -1,0 +1,6 @@
+# Additional repository entries passed to sbuild as --extra-repository.
+# Validation fixture for Python build dependencies across suite branches.
+[noble] deb [arch=arm64 trusted=yes] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu noble main
+[resolute] deb [arch=arm64 trusted=yes] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu resolute main
+# Debian trixie fixture uses the resolute PPA suite for this test dependency.
+[trixie] deb [arch=arm64 trusted=yes] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu resolute main

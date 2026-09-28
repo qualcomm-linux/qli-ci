@@ -1,0 +1,15 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_clean:
+	dh_clean
+	rm -rf debian/.debhelper \
+      debian/debhelper-build-stamp \
+      debian/files \
+      debian/libqcom-example-dev.substvars \
+      debian/libqcom-example-dev \
+      debian/libqcom-example1.substvars \
+      debian/libqcom-example1 \
+      debian/tmp

@@ -4,7 +4,7 @@ description: |
   Resets qualcomm-linux/pkg-example to a clean state without running the
   full e2e loop test. Rebuilds pkg-example's default branch and
   qcom/debian/latest packaging branch from this repo's own
-  test/pkg-example/ fixtures and pkg-workflows/* templates, and deletes all
+  tests/pkg-example/ fixtures and pkg-workflows/* templates, and deletes all
   tags and qcom/*, upstream/latest, and debian/pr/* branches. Uses the same
   reset logic as the e2e loop's own reset-lane step.
 
@@ -48,7 +48,7 @@ jobs:
           ENABLE_UBUNTU_PATH: "1"
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh init
+          ./tests/pkg-example/pkg_example_e2e_loop.sh init
 
       - name: Prepare pkg-example clone
         env:
@@ -56,7 +56,7 @@ jobs:
           QLI_CI_REF: ${{ github.sha }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-repo
+          ./tests/pkg-example/pkg_example_e2e_loop.sh prepare-repo
 
       - name: Reset pkg-example
         env:
@@ -64,11 +64,11 @@ jobs:
           QLI_CI_REF: ${{ github.sha }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh reset-lane debian
+          ./tests/pkg-example/pkg_example_e2e_loop.sh reset-lane debian
 
       - name: Cleanup workspace
         if: ${{ always() }}
         continue-on-error: true
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh cleanup
+          ./tests/pkg-example/pkg_example_e2e_loop.sh cleanup

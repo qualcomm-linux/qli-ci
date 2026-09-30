@@ -9,9 +9,9 @@ sync, and to make architecture changes reviewable in PRs.
 Current scope is the `pkg-example` loop test implemented by:
 
 - `.github/workflows/pkg-example-e2e-loop.yml`
-- `test/pkg-example/pkg_example_e2e_loop.sh`
-- `test/pkg-example/debian/` (Debian packaging metadata fixture)
-- `test/pkg-example/pkg-pr-build-check.yml` (pkg-example-specific fixture)
+- `tests/pkg-example/pkg_example_e2e_loop.sh`
+- `tests/pkg-example/debian/` (Debian packaging metadata fixture)
+- `tests/pkg-example/pkg-pr-build-check.yml` (pkg-example-specific fixture)
 
 The suite validates that a given `qli-ci` ref works across the package
 lifecycle loop:
@@ -56,7 +56,7 @@ Cancellation behavior is part of the e2e contract:
   - Ubuntu lane is guarded so it does not start when the overall run is in
     cancelled state.
 - script/runtime level:
-  - `test/pkg-example/pkg_example_e2e_loop.sh` traps `SIGINT` and `SIGTERM`.
+  - `tests/pkg-example/pkg_example_e2e_loop.sh` traps `SIGINT` and `SIGTERM`.
   - long polling/retry loops check cancellation and exit immediately.
 
 Expected behavior:
@@ -154,7 +154,7 @@ retargeted.
 2. Wipe all tags and all `qcom/*`, `upstream/latest`, and `debian/pr/*`
    branches.
 3. Recreate `qcom/debian/latest` as a fresh orphan branch, seeded from
-   `test/pkg-example/debian/` plus a lane-specific PR-hook/release set:
+   `tests/pkg-example/debian/` plus a lane-specific PR-hook/release set:
    - debusine lane: `debusine-pr-hook.yml`, `debusine-release.yml`, and
      `README.debusine.md` only (copied verbatim, same reasoning as above) -
      deliberately no `pkg-pr-hook.yml`, so this lane's promotion PRs (opened
@@ -180,7 +180,7 @@ same reset logic via `workflow_dispatch` for humans who want to reset
 ## Operational Flow
 
 The workflow invokes explicit phase commands from
-`test/pkg-example/pkg_example_e2e_loop.sh` so each stage is visible in GitHub UI.
+`tests/pkg-example/pkg_example_e2e_loop.sh` so each stage is visible in GitHub UI.
 
 Per enabled lane:
 
@@ -339,7 +339,7 @@ When validating architecture vs implementation, verify:
    - script trap/polling checks still exit promptly on cancel signals.
 7. Prebuilt lane seeds local fixture artifacts and sets `PROMOTE_MODE=prebuilt`.
 8. `reset-lane` rebuilds `pkg-example`'s default branch and `qcom/debian/latest`
-   from this repo's own `pkg-workflows/*` and `test/pkg-example/*` content —
+   from this repo's own `pkg-workflows/*` and `tests/pkg-example/*` content —
    it must never dispatch anything that lives in `pkg-example` itself.
 9. PR-hook templates still define PR-level concurrency cancel-in-progress.
 10. PR-build wait still keys on PR head SHA and chooses latest run.

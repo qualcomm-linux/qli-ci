@@ -69,7 +69,7 @@ jobs:
             if [[ "${f}" == .github/workflows/pkg-*-reusable-workflow.yml ]] \
               || [[ "${f}" == scripts/* ]] \
               || [[ "${f}" == pkg-workflows/* ]] \
-              || [[ "${f}" == test/* ]]; then
+              || [[ "${f}" == tests/* ]]; then
               relevant="true"
             fi
           done <<< "${files}"
@@ -164,7 +164,7 @@ jobs:
           PROMOTE_MODE: ${{ env.PROMOTE_MODE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh init
+          ./tests/pkg-example/pkg_example_e2e_loop.sh init
 
       - name: Prepare pkg-example clone
         env:
@@ -174,7 +174,7 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-repo
+          ./tests/pkg-example/pkg_example_e2e_loop.sh prepare-repo
 
       - name: Debusine reset
         env:
@@ -183,7 +183,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh reset-lane debusine
+          ./tests/pkg-example/pkg_example_e2e_loop.sh reset-lane debusine
 
       - name: Debusine v1.0.0 promote
         env:
@@ -191,7 +191,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh promote-tag debusine v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh promote-tag debusine v1.0.0
 
       - name: Debusine v1.0.0 check
         env:
@@ -199,7 +199,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh wait-debusine-check debusine v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh wait-debusine-check debusine v1.0.0
 
       - name: Debusine v1.0.0 merge PR
         env:
@@ -207,7 +207,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh merge-pr debusine v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh merge-pr debusine v1.0.0
 
       - name: Debusine v1.0.0 release
         env:
@@ -215,7 +215,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh release-tag debusine v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh release-tag debusine v1.0.0
 
       - name: Debusine v1.1.0 promote
         env:
@@ -223,7 +223,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh promote-tag debusine v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh promote-tag debusine v1.1.0
 
       - name: Debusine v1.1.0 check
         env:
@@ -231,7 +231,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh wait-debusine-check debusine v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh wait-debusine-check debusine v1.1.0
 
       - name: Debusine v1.1.0 merge PR
         env:
@@ -239,7 +239,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh merge-pr debusine v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh merge-pr debusine v1.1.0
 
       - name: Debusine v1.1.0 release
         env:
@@ -247,7 +247,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh release-tag debusine v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh release-tag debusine v1.1.0
 
       - name: Build debusine summary
         if: ${{ always() }}
@@ -256,7 +256,7 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh write-summary
+          ./tests/pkg-example/pkg_example_e2e_loop.sh write-summary
 
       - name: Append debusine summary to workflow
         if: ${{ always() }}
@@ -280,7 +280,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh cleanup
+          ./tests/pkg-example/pkg_example_e2e_loop.sh cleanup
 
   prebuilt-promote-lane:
     name: pkg-example e2e (prebuilt promote lane)
@@ -349,7 +349,7 @@ jobs:
           PROMOTE_MODE: ${{ env.PROMOTE_MODE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh init
+          ./tests/pkg-example/pkg_example_e2e_loop.sh init
 
       - name: Prepare pkg-example clone
         env:
@@ -359,7 +359,7 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-repo
+          ./tests/pkg-example/pkg_example_e2e_loop.sh prepare-repo
 
       - name: Prebuilt reset (ubuntu lane)
         env:
@@ -368,7 +368,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh reset-lane ubuntu
+          ./tests/pkg-example/pkg_example_e2e_loop.sh reset-lane ubuntu
 
       - name: Prebuilt seed ubuntu branch
         env:
@@ -376,7 +376,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh seed-ubuntu
+          ./tests/pkg-example/pkg_example_e2e_loop.sh seed-ubuntu
 
       - name: Install arm64 cross compiler (prebuilt fixtures)
         run: |
@@ -392,7 +392,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh seed-prebuilt-fixtures ubuntu
+          ./tests/pkg-example/pkg_example_e2e_loop.sh seed-prebuilt-fixtures ubuntu
 
       - name: Prebuilt v1.0.0 promote
         env:
@@ -401,7 +401,7 @@ jobs:
           PROMOTE_MODE: ${{ env.PROMOTE_MODE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh promote-tag ubuntu v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh promote-tag ubuntu v1.0.0
 
       - name: Prebuilt v1.0.0 sync PR hook
         env:
@@ -410,7 +410,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.0.0
 
       - name: Prebuilt v1.0.0 PR build
         env:
@@ -418,7 +418,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.0.0
 
       - name: Prebuilt v1.0.0 merge PR
         env:
@@ -426,7 +426,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh merge-pr ubuntu v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh merge-pr ubuntu v1.0.0
 
       - name: Prebuilt v1.0.0 release
         env:
@@ -434,7 +434,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh release-tag ubuntu v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh release-tag ubuntu v1.0.0
 
       - name: Build prebuilt summary
         if: ${{ always() }}
@@ -443,7 +443,7 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh write-summary
+          ./tests/pkg-example/pkg_example_e2e_loop.sh write-summary
 
       - name: Append prebuilt summary to workflow
         if: ${{ always() }}
@@ -467,7 +467,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh cleanup
+          ./tests/pkg-example/pkg_example_e2e_loop.sh cleanup
 
   debian-lane:
     name: pkg-example e2e (debian lane)
@@ -535,7 +535,7 @@ jobs:
           ENABLE_UBUNTU_PATH: ${{ env.ENABLE_UBUNTU_PATH }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh init
+          ./tests/pkg-example/pkg_example_e2e_loop.sh init
 
       - name: Prepare pkg-example clone
         env:
@@ -545,7 +545,7 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-repo
+          ./tests/pkg-example/pkg_example_e2e_loop.sh prepare-repo
 
       - name: Debian reset
         env:
@@ -554,7 +554,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh reset-lane debian
+          ./tests/pkg-example/pkg_example_e2e_loop.sh reset-lane debian
 
       - name: Debian v1.0.0 promote
         env:
@@ -562,7 +562,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh promote-tag debian v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh promote-tag debian v1.0.0
 
       - name: Debian v1.0.0 sync PR hook
         env:
@@ -571,7 +571,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh sync-pr-hook debian v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh sync-pr-hook debian v1.0.0
 
       - name: Debian v1.0.0 PR build
         env:
@@ -579,7 +579,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh wait-pr-build debian v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh wait-pr-build debian v1.0.0
 
       - name: Debian v1.0.0 merge PR
         env:
@@ -587,7 +587,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh merge-pr debian v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh merge-pr debian v1.0.0
 
       - name: Debian v1.0.0 release
         env:
@@ -595,7 +595,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh release-tag debian v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh release-tag debian v1.0.0
 
       - name: Debian v1.1.0 promote
         env:
@@ -603,7 +603,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh promote-tag debian v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh promote-tag debian v1.1.0
 
       - name: Debian v1.1.0 sync PR hook
         env:
@@ -612,7 +612,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh sync-pr-hook debian v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh sync-pr-hook debian v1.1.0
 
       - name: Debian v1.1.0 PR build
         env:
@@ -620,7 +620,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh wait-pr-build debian v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh wait-pr-build debian v1.1.0
 
       - name: Debian v1.1.0 merge PR
         env:
@@ -628,7 +628,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh merge-pr debian v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh merge-pr debian v1.1.0
 
       - name: Debian v1.1.0 release
         env:
@@ -636,7 +636,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh release-tag debian v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh release-tag debian v1.1.0
 
       - name: Upload shared e2e state
         if: ${{ always() }}
@@ -722,7 +722,7 @@ jobs:
           ENABLE_UBUNTU_PATH: ${{ env.ENABLE_UBUNTU_PATH }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh init
+          ./tests/pkg-example/pkg_example_e2e_loop.sh init
 
       - name: Prepare pkg-example clone
         env:
@@ -732,7 +732,7 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh prepare-repo
+          ./tests/pkg-example/pkg_example_e2e_loop.sh prepare-repo
 
       - name: Ubuntu reset
         env:
@@ -741,7 +741,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh reset-lane ubuntu
+          ./tests/pkg-example/pkg_example_e2e_loop.sh reset-lane ubuntu
 
       - name: Ubuntu seed branch
         env:
@@ -749,7 +749,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh seed-ubuntu
+          ./tests/pkg-example/pkg_example_e2e_loop.sh seed-ubuntu
 
       - name: Ubuntu v1.0.0 promote
         env:
@@ -757,7 +757,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh promote-tag ubuntu v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh promote-tag ubuntu v1.0.0
 
       - name: Ubuntu v1.0.0 sync PR hook
         env:
@@ -766,7 +766,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.0.0
 
       - name: Ubuntu v1.0.0 PR build
         env:
@@ -774,7 +774,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.0.0
 
       - name: Ubuntu v1.0.0 merge PR
         env:
@@ -782,7 +782,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh merge-pr ubuntu v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh merge-pr ubuntu v1.0.0
 
       - name: Ubuntu v1.0.0 release
         env:
@@ -790,7 +790,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh release-tag ubuntu v1.0.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh release-tag ubuntu v1.0.0
 
       - name: Ubuntu curate post-release changelog (clear WIP)
         env:
@@ -798,7 +798,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh curate-ubuntu-wip-after-first-release
+          ./tests/pkg-example/pkg_example_e2e_loop.sh curate-ubuntu-wip-after-first-release
 
       - name: Ubuntu v1.1.0 promote
         env:
@@ -806,7 +806,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh promote-tag ubuntu v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh promote-tag ubuntu v1.1.0
 
       - name: Ubuntu v1.1.0 sync PR hook
         env:
@@ -815,7 +815,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh sync-pr-hook ubuntu v1.1.0
 
       - name: Ubuntu v1.1.0 PR build
         env:
@@ -823,7 +823,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh wait-pr-build ubuntu v1.1.0
 
       - name: Ubuntu v1.1.0 merge PR
         env:
@@ -831,7 +831,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh merge-pr ubuntu v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh merge-pr ubuntu v1.1.0
 
       - name: Ubuntu v1.1.0 release
         env:
@@ -839,7 +839,7 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh release-tag ubuntu v1.1.0
+          ./tests/pkg-example/pkg_example_e2e_loop.sh release-tag ubuntu v1.1.0
 
       - name: Build loop summary
         if: ${{ always() }}
@@ -848,7 +848,7 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh write-summary
+          ./tests/pkg-example/pkg_example_e2e_loop.sh write-summary
 
       - name: Append summary to workflow
         if: ${{ always() }}
@@ -903,4 +903,4 @@ jobs:
           STATE_FILE: ${{ env.STATE_FILE }}
         run: |
           set -euo pipefail
-          ./test/pkg-example/pkg_example_e2e_loop.sh cleanup
+          ./tests/pkg-example/pkg_example_e2e_loop.sh cleanup

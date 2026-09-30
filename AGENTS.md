@@ -62,7 +62,7 @@ Examples:
 - `qcom/debian/latest` (normalized to suite `sid`)
 - `qcom/debian/bookworm`
 - `qcom/ubuntu/resolute`
-- `test/qcom/ubuntu/resolute`
+- `tests/qcom/ubuntu/resolute`
 - `ubuntu/resolute`
 - `dev/whatever/yo/debian/trixie`
 
@@ -126,27 +126,27 @@ decision to bring them back:
 `qli-ci` owns a dedicated `pkg-example` loop test. `pkg-example` itself is a
 fully disposable sandbox: every lane rebuilds its default branch and
 `qcom/debian/latest` from scratch from this repo's own `pkg-workflows/*`
-templates and `test/pkg-example/*` fixtures, and never depends on anything
+templates and `tests/pkg-example/*` fixtures, and never depends on anything
 committed in `pkg-example`. Lanes run in order: debusine, prebuilt promote,
 Debian, Ubuntu.
 
 Source of truth for test architecture:
 
-- `test/pkg-example/TESTS.instructions.md`
+- `tests/pkg-example/TESTS.instructions.md`
 
 Core implementation entrypoints:
 
 - `.github/workflows/pkg-example-e2e-loop.yml`
 - `.github/workflows/pkg-example-reset.yml` (standalone human-triggerable
   reset, reusing the same reset logic)
-- `test/pkg-example/pkg_example_e2e_loop.sh`
-- `test/pkg-example/debian/` (Debian packaging metadata fixture, seeded onto
+- `tests/pkg-example/pkg_example_e2e_loop.sh`
+- `tests/pkg-example/debian/` (Debian packaging metadata fixture, seeded onto
   `qcom/debian/latest` on every reset)
-- `test/pkg-example/pkg-pr-build-check.yml` (pkg-example-specific default
+- `tests/pkg-example/pkg-pr-build-check.yml` (pkg-example-specific default
   branch fixture)
 
 Keep architecture details, invariants, and drift-check rules in
-`test/pkg-example/TESTS.instructions.md` and update that document in the same PR whenever
+`tests/pkg-example/TESTS.instructions.md` and update that document in the same PR whenever
 the test flow contract changes.
 
 ## Editing Guidance

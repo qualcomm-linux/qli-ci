@@ -77,7 +77,7 @@ source ./setenv
 Then run pytest from anywhere:
 
 ```sh
-py.test-3 path/to/infra-test/
+py.test-3 path/to/tests/debusine/
 ```
 
 `setenv` re-uses any variables already exported in your shell (press Enter to keep them), so you only need to re-enter what has changed between runs.

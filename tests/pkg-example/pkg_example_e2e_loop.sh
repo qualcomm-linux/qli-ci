@@ -376,7 +376,7 @@ rebuild_default_branch_tree() {
 
   # pkg-example-specific, not a qli-ci template, but still calls back into
   # qli-ci reusable workflows so it needs the same ref patch.
-  cp "${QLI_CI_ROOT}/test/pkg-example/pkg-pr-build-check.yml" .github/workflows/pkg-pr-build-check.yml
+  cp "${QLI_CI_ROOT}/tests/pkg-example/pkg-pr-build-check.yml" .github/workflows/pkg-pr-build-check.yml
   patch_qli_ref_file .github/workflows/pkg-pr-build-check.yml
 
   # Debusine default-branch set. These call debusine-action, not qli-ci, so
@@ -407,7 +407,7 @@ rebuild_default_branch_tree() {
 # goes away, but both still need coverage in the meantime.
 rebuild_qcom_debian_latest_tree() {
   local lane="$1"
-  local template_src="${QLI_CI_ROOT}/test/pkg-example/debian"
+  local template_src="${QLI_CI_ROOT}/tests/pkg-example/debian"
   if [[ ! -d "$template_src" ]] || [[ -z "$(find "$template_src" -mindepth 1 -print -quit)" ]]; then
     echo "Missing or empty Debian fixture directory: ${template_src}" >&2
     return 1

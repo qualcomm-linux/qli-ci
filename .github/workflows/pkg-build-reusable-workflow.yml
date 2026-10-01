@@ -115,7 +115,7 @@ jobs:
       suite: ${{ steps.resolve.outputs.suite }}
     steps:
       - name: Checkout qli-ci scripts
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ inputs.qli-ci-ref }}
@@ -223,7 +223,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout qli-ci
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ inputs.qli-ci-ref }}
@@ -236,7 +236,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout Repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.debian-ref }}
           path: package-repo
@@ -276,7 +276,7 @@ jobs:
           tar -C build-area -czf docker-build-area.tgz .
 
       - name: Upload Docker build archive
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: docker-build-area
           path: docker-build-area.tgz
@@ -304,7 +304,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout debusine-action helpers
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: qualcomm-linux/debusine-action
           ref: ${{ env.DEBUSINE_ACTION_REF }}
@@ -315,7 +315,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout Repository
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.debian-ref }}
           path: srcpkg
@@ -384,7 +384,7 @@ jobs:
 
       - name: Upload release bundle
         if: ${{ inputs.release }}
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-bundle
           path: release.bundle
@@ -442,7 +442,7 @@ jobs:
 
       - name: Checkout debusine-action helpers
         if: ${{ needs.resolve.outputs.family == 'debian' && needs.resolve.outputs.force_docker_build != 'true' }}
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: qualcomm-linux/debusine-action
           ref: ${{ env.DEBUSINE_ACTION_REF }}
@@ -454,7 +454,7 @@ jobs:
 
       - name: Checkout Repository
         if: ${{ needs.resolve.outputs.family == 'debian' && needs.resolve.outputs.force_docker_build != 'true' }}
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.debian-ref }}
           path: srcpkg

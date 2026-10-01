@@ -79,18 +79,18 @@ def setup():
     APT_CACHE_DIR = os.path.join(TEMP_DIR, "cache")
     create_new_directory(APT_CACHE_DIR)
 
-    OPT =  f" -o Dir::Etc::sourcelist={SOURCE_LIST_FILE}"
-    OPT += f" -o Dir::Etc::sourceparts=/dev/null"
-    OPT += f" -o Dir::State={APT_CACHE_DIR}"
-    OPT += f" -o Dir::Cache={APT_CACHE_DIR}"
+    OPT = ["-o", f"Dir::Etc::sourcelist={SOURCE_LIST_FILE}",
+           "-o", "Dir::Etc::sourceparts=/dev/null",
+           "-o", f"Dir::State={APT_CACHE_DIR}",
+           "-o", f"Dir::Cache={APT_CACHE_DIR}"]
 
 def run_apt_update() -> bool :
 
-    command = "apt-get update" + OPT
+    command = ["apt-get", "update"] + OPT
 
-    logger.debug(f"[PPA_INTERFACE]/{PACKAGE_NAME}: Running: {command}")
+    logger.debug(f"[PPA_INTERFACE]/{PACKAGE_NAME}: Running: {' '.join(command)}")
 
-    apt_ret = subprocess.run(command, cwd=TEMP_DIR, shell=True, capture_output=True)
+    apt_ret = subprocess.run(command, cwd=TEMP_DIR, capture_output=True)
 
     if apt_ret.returncode != 0:
         logger.critical(f"[PPA_INTERFACE]/{PACKAGE_NAME}: Failed to update package list: {apt_ret.stderr}")
@@ -110,12 +110,12 @@ def download_package() -> bool :
 
     package = PACKAGE_NAME + ("" if PACKAGE_VERSION == None else ("=" + PACKAGE_VERSION))
 
-    command = f"apt-get download {package}" + OPT
+    command = ["apt-get", "download", package] + OPT
 
-    logger.debug(f"[PPA_INTERFACE]/[DOWNLOAD]/{PACKAGE_NAME}: Running: {command}")
+    logger.debug(f"[PPA_INTERFACE]/[DOWNLOAD]/{PACKAGE_NAME}: Running: {' '.join(command)}")
 
 
-    apt_ret = subprocess.run(command, cwd=TEMP_DIR, shell=True, capture_output=True)
+    apt_ret = subprocess.run(command, cwd=TEMP_DIR, capture_output=True)
 
     if apt_ret.returncode != 0:
         logger.error(f"[PPA_INTERFACE]/[DOWNLOAD]/{PACKAGE_NAME}: Failed to download {package}: {apt_ret.stderr}")
@@ -128,9 +128,9 @@ def download_package() -> bool :
 def list_versions() :
     logger.debug(f"[PPA_INTERFACE]/[LIST_VERSIONS]/{PACKAGE_NAME}: Listing versions available to download")
 
-    command = f"apt-cache policy {PACKAGE_NAME} {OPT}"
+    command = ["apt-cache", "policy", PACKAGE_NAME] + OPT
 
-    apt_ret = subprocess.run(command, cwd=TEMP_DIR, shell=True, capture_output=True)
+    apt_ret = subprocess.run(command, cwd=TEMP_DIR, capture_output=True)
 
     if apt_ret.returncode != 0:
         logger.debug("command failed")
@@ -144,9 +144,9 @@ def list_versions() :
 def contains_version(version : str) -> bool :
     logger.debug(f"[PPA_INTERFACE]/[CONTAINS_VERSION]/{PACKAGE_NAME}: Checking if PPA contains version : {version}")
 
-    command = f"apt list -a {PACKAGE_NAME} {OPT}"
+    command = ["apt", "list", "-a", PACKAGE_NAME] + OPT
 
-    apt_ret = subprocess.run(command, cwd=TEMP_DIR, shell=True, capture_output=True)
+    apt_ret = subprocess.run(command, cwd=TEMP_DIR, capture_output=True)
 
     if apt_ret.returncode != 0:
         logger.debug("command failed")

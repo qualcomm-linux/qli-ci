@@ -71,6 +71,13 @@ class ABI_DIFF_Result:
 # package_name - result
 global_checker_results: dict[str, ABI_DIFF_Result] = {}
 
+def debug_tree_listing(path):
+    """Return an indented 'tree -a <path>' listing, or (None, stderr) on failure."""
+    tree_output = subprocess.run(["tree", "-a", path], capture_output=True, text=True)
+    if tree_output.returncode != 0:
+        return None, tree_output.stderr
+    return "\n".join(f"       {line}" for line in tree_output.stdout.splitlines()), None
+
 def produce_report(log_file=None):
 
     log = "ABI Check results\n\n"
@@ -96,10 +103,9 @@ def produce_report(log_file=None):
         log += f"  - Remark:       {result.abi_pkg_diff_remark}\n"
         log += f"  - Output:       {"" if result.abi_pkg_diff_output is not None else result.abi_pkg_diff_output}\n"
         if result.abi_pkg_diff_output is not None:
-            cmd = f"echo \"{result.abi_pkg_diff_output}\" | sed 's/^/       /'"
-            output = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+            indented = "\n".join(f"       {line}" for line in result.abi_pkg_diff_output.splitlines())
 
-            log += f"{output.stdout}\n"
+            log += f"{indented}\n"
 
         log += ("-" * 100 + "\n")
 
@@ -263,12 +269,11 @@ def single_repo_deb_abi_checker(repo_package_dir, apt_server_config, keep_temp=T
     logger.debug(f"[ABI_CHECKER]/[SINGLE_REPO]: performing abi checking for repo '{basedir}'")
 
     if print_debug_tree:
-        tree_cmd = f"tree -a {repo_package_dir} | sed 's/^/       /'"
-        tree_output = subprocess.run(tree_cmd, capture_output=True, text=True, shell=True)
-        if tree_output.returncode == 0:
-            logger.debug(f"[ABI_CHECKER]/[SINGLE_REPO]: Content :\n{tree_output.stdout}")
+        tree_listing, tree_err = debug_tree_listing(repo_package_dir)
+        if tree_err is None:
+            logger.debug(f"[ABI_CHECKER]/[SINGLE_REPO]: Content :\n{tree_listing}")
         else:
-            logger.error(f"[ABI_CHECKER]/[SINGLE_REPO]: Failed to run 'tree' command: {tree_output.stderr}")
+            logger.error(f"[ABI_CHECKER]/[SINGLE_REPO]: Failed to run 'tree' command: {tree_err}")
 
     abi_check_temp_dir = os.path.join(repo_package_dir, "abi_check_tmp")
 
@@ -387,12 +392,11 @@ def single_package_abi_checker(repo_package_dir,
 
     if print_debug_tree:
         # Run the 'tree' command to list files in a tree structure
-        tree_cmd = f"tree -a {new_extract_dir} | sed 's/^/       /'"
-        tree_output = subprocess.run(tree_cmd, capture_output=True, text=True, shell=True)
-        if tree_output.returncode == 0:
-            logger.debug(f"[ABI_CHECKER]/{package_name}: Tree structure of new_extract_dir:\n{tree_output.stdout}")
+        tree_listing, tree_err = debug_tree_listing(new_extract_dir)
+        if tree_err is None:
+            logger.debug(f"[ABI_CHECKER]/{package_name}: Tree structure of new_extract_dir:\n{tree_listing}")
         else:
-            logger.error(f"[ABI_CHECKER]/{package_name}: Failed to run 'tree' command: {tree_output.stderr}")
+            logger.error(f"[ABI_CHECKER]/{package_name}: Failed to run 'tree' command: {tree_err}")
 
     # ******* OLD DEB PACKAGE fetching *********************************************************
 
@@ -420,24 +424,24 @@ def single_package_abi_checker(repo_package_dir,
     cache_dir = os.path.join(apt_dir, "cache")
     create_new_directory(cache_dir)
 
-    opt  = f" -o Dir::Etc::sourcelist={temp_sources_list}"
-    opt += f" -o Dir::Etc::sourceparts=/dev/null"
-    opt += f" -o Dir::State={cache_dir}"
-    opt += f" -o Dir::Cache={cache_dir}"
+    opt = ["-o", f"Dir::Etc::sourcelist={temp_sources_list}",
+           "-o", "Dir::Etc::sourceparts=/dev/null",
+           "-o", f"Dir::State={cache_dir}",
+           "-o", f"Dir::Cache={cache_dir}"]
 
     # Update the package list
-    cmd = "apt-get update" + opt
+    cmd = ["apt-get", "update"] + opt
 
-    logger.debug(f"[ABI_CHECKER]/{package_name}: Running: {cmd}")
-    apt_ret = subprocess.run(cmd, cwd=old_download_dir, shell=True, capture_output=True)
+    logger.debug(f"[ABI_CHECKER]/{package_name}: Running: {' '.join(cmd)}")
+    apt_ret = subprocess.run(cmd, cwd=old_download_dir, capture_output=True)
     if apt_ret.returncode != 0:
         logger.critical(f"[ABI_CHECKER]/{package_name}: Failed to update package list: {apt_ret.stderr}")
         return RETURN_PPA_ERROR
 
     # download the .deb package
     pkg = package_name + (("=" + specific_apt_version) if specific_apt_version else "")
-    cmd = f"apt-get download {pkg}" + opt
-    apt_ret = subprocess.run(cmd, cwd=old_download_dir, shell=True, capture_output=True)
+    cmd = ["apt-get", "download", pkg] + opt
+    apt_ret = subprocess.run(cmd, cwd=old_download_dir, capture_output=True)
     if apt_ret.returncode != 0:
         logger.error(f"[ABI_CHECKER]/{package_name}: Failed to download {pkg}: {apt_ret.stderr}")
         return RETURN_PPA_PACKAGE_NOT_FOUND
@@ -446,8 +450,8 @@ def single_package_abi_checker(repo_package_dir,
 
     # download the -dev.deb package
     pkg = package_name_without_major + "-dev"  + (("=" + specific_apt_version) if specific_apt_version else "")
-    cmd = f"apt-get download {pkg}" + opt
-    apt_ret = subprocess.run(cmd, cwd=old_download_dir, shell=True, capture_output=True)
+    cmd = ["apt-get", "download", pkg] + opt
+    apt_ret = subprocess.run(cmd, cwd=old_download_dir, capture_output=True)
     if apt_ret.returncode != 0:
         logger.warning(f"[ABI_CHECKER]/{package_name}: Failed to download {pkg}: {apt_ret.stderr}")
     else:
@@ -455,8 +459,8 @@ def single_package_abi_checker(repo_package_dir,
 
     # download the -dbgsym.deb package
     pkg = package_name + "-dbgsym"  + (("=" + specific_apt_version) if specific_apt_version else "")
-    cmd = f"apt-get download {pkg}" + opt
-    apt_ret = subprocess.run(cmd, cwd=old_download_dir, shell=True, capture_output=True)
+    cmd = ["apt-get", "download", pkg] + opt
+    apt_ret = subprocess.run(cmd, cwd=old_download_dir, capture_output=True)
     if apt_ret.returncode != 0:
         logger.warning(f"[ABI_CHECKER]/{package_name}: Failed to download {pkg}: {apt_ret.stderr}")
     else:
@@ -499,12 +503,11 @@ def single_package_abi_checker(repo_package_dir,
 
     if print_debug_tree:
         # Run the 'tree' command to list files in a tree structure
-        tree_cmd = f"tree -a {old_extract_dir} | sed 's/^/       /'"
-        tree_output = subprocess.run(tree_cmd, capture_output=True, text=True, shell=True)
-        if tree_output.returncode == 0:
-            logger.debug(f"[ABI_CHECKER]: Tree structure of old_extract_dir:\n{tree_output.stdout}")
+        tree_listing, tree_err = debug_tree_listing(old_extract_dir)
+        if tree_err is None:
+            logger.debug(f"[ABI_CHECKER]: Tree structure of old_extract_dir:\n{tree_listing}")
         else:
-            logger.error(f"[ABI_CHECKER]: Failed to run 'tree' command: {tree_output.stderr}")
+            logger.error(f"[ABI_CHECKER]: Failed to run 'tree' command: {tree_err}")
 
     # ******* ABI CHECKING **********************************************************************
 
@@ -519,10 +522,8 @@ def single_package_abi_checker(repo_package_dir,
     # The return value between abidiff and abipkgdiff has the same meaning, so we can use the same analysis
     if abidiff_result != 0:
 
-        cmd =f"cat {report_dir}/abipkgdiff_output.txt"
-
-        log = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        result.abi_pkg_diff_output = log.stdout
+        with open(os.path.join(report_dir, "abipkgdiff_output.txt")) as f:
+            result.abi_pkg_diff_output = f.read()
 
 
         # Analyze the first 4 bits of the return value
@@ -632,28 +633,28 @@ def compare_with_abipkgdiff(old_deb_path, old_dev_path, old_ddeb_path,
     os.makedirs(report_dir, exist_ok=True)
     log_path = os.path.join(report_dir, "abipkgdiff_output.txt")
 
-    cmd = "abipkgdiff"
+    cmd = ["abipkgdiff"]
 
     if include_non_reachable_types:
         logger.debug("[ABI_CHECKER]/[ABI_PKG_DIFF] : Using --non-reachable-types option")
-        cmd += " --non-reachable-types"
+        cmd.append("--non-reachable-types")
 
     if old_dev_path is not None and new_dev_path is not None:
-        cmd += f" --devel-pkg1 {old_dev_path} --devel-pkg2 {new_dev_path}"
+        cmd += ["--devel-pkg1", old_dev_path, "--devel-pkg2", new_dev_path]
     else:
         logger.warning("[ABI_CHECKER]/[ABI_PKG_DIFF]: One or both of the -dev packages are missing. Potentially missing on information")
 
     if old_ddeb_path is not None and new_ddeb_path is not None:
-        cmd += f" --debug-info-pkg1 {old_ddeb_path} --debug-info-pkg2 {new_ddeb_path}"
+        cmd += ["--debug-info-pkg1", old_ddeb_path, "--debug-info-pkg2", new_ddeb_path]
     else:
         logger.warning("[ABI_CHECKER]/[ABI_PKG_DIFF]: One or both of the -dbgsym.ddeb packages are missing. Potentially missing on information")
 
-    cmd += f" {old_deb_path} {new_deb_path}"
+    cmd += [old_deb_path, new_deb_path]
 
 
-    logger.debug(f"[ABI_CHECKER]/[ABI_PKG_DIFF]: command: {cmd}")
+    logger.debug(f"[ABI_CHECKER]/[ABI_PKG_DIFF]: command: {' '.join(cmd)}")
 
-    abidiff_output = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+    abidiff_output = subprocess.run(cmd, capture_output=True, text=True)
 
     with open(log_path, "w") as f:
         f.write(abidiff_output.stdout)

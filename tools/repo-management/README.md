@@ -64,8 +64,10 @@ Debusine workflows.
 
 **Options:**
 - `--check`: Only report what needs changing without making changes
-- `--force`: Proceed even if prerequisite checks fail (public visibility
-  and `is-pkg-repo` property)
+- `--force`: Proceed even if the public-visibility prerequisite check
+  fails. The `is-pkg-repo` compliance gate is **not** bypassable by
+  `--force` (or anything else); see the "Compliance Gate" section of
+  SPECIFICATION.md
 - `--production`: Set `DEBUSINE_HOST` to `debusine.qualcomm.com`
   (default)
 - `--stage`: Set `DEBUSINE_HOST` to `stage.debusine.qualcomm.com`

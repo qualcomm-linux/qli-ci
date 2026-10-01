@@ -11,6 +11,29 @@ directory. Any change to what the tools do to a repository must be
 described here first, and the implementation then brought into sync with
 it.
 
+## Compliance Gate: is-pkg-repo
+
+Enabling QLI CI on a repository requires prior compliance approval. That
+approval is recorded by setting the repository's `is-pkg-repo` custom
+property to `true`. This property is therefore a **compliance gate**: it
+is the record that compliance approval has taken place before QLI CI is
+enabled on a given repository.
+
+| Custom property | Required value |
+|-----------------|----------------|
+| `is-pkg-repo`   | `true`         |
+
+Every tool that configures a repository for QLI CI — `configure-repo`,
+`set-repo-secrets`, and `update-workflow-files` — must verify this gate
+before making or reporting any configuration, and must refuse to proceed
+if it is not satisfied. This gate is deliberate and **must not be
+bypassable** by `--force` or any other means. The only way to satisfy it
+is to set the `is-pkg-repo` property to `true`, which is expected to
+happen only once compliance approval has been granted.
+
+Setting the `is-pkg-repo` custom property itself is out of scope for
+these tools; it is managed as part of the compliance approval process.
+
 ## Settings
 
 ### GitHub Actions Variables

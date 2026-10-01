@@ -10,7 +10,9 @@ Arguments:
 
 Options:
     --check         Only report what needs changing without making changes
-    --force         Proceed even if prerequisite checks fail (visibility, is-pkg-repo)
+    --force         Proceed even if the public-visibility prerequisite check
+                    fails. The 'is-pkg-repo' compliance gate is NOT bypassable
+                    by --force (or anything else); see SPECIFICATION.md.
     --production    Set DEBUSINE_HOST to debusine.qualcomm.com (default)
     --stage         Set DEBUSINE_HOST to stage.debusine.qualcomm.com
 """
@@ -340,11 +342,26 @@ def configure_repository(repo: str, debusine_host: str, dry_run: bool, force: bo
     else:
         print("✓ Repository is public")
 
+    # COMPLIANCE GATE: the 'is-pkg-repo' custom property must be set to 'true'
+    # before QLI CI may be enabled on a repository. This property is the
+    # record that compliance approval has taken place for the repository, so
+    # this gate is deliberate and MUST NOT be bypassable (not by --force, nor
+    # by any other means). It is checked separately from, and ahead of, the
+    # --force-able prerequisites above. See SPECIFICATION.md ("Compliance
+    # Gate: is-pkg-repo"). Do not relax this without a corresponding
+    # specification change and compliance sign-off.
     props = get_repo_custom_properties(repo)
     if props.get("is-pkg-repo") != "true":
         current = props.get("is-pkg-repo", "unset")
         print(f"❌ Custom property 'is-pkg-repo' is not set to 'true' (current: {current})")
-        prereq_failures = True
+        print()
+        print(
+            "Error: the 'is-pkg-repo' compliance gate is not satisfied. This "
+            "gate ensures compliance approval has taken place before QLI CI is "
+            "enabled on a repository and cannot be bypassed (--force does not "
+            "apply to it)."
+        )
+        return 1
     else:
         print("✓ Custom property 'is-pkg-repo' is set to 'true'")
 

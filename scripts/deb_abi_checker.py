@@ -101,7 +101,8 @@ def produce_report(log_file=None):
         log += f"  - Result:       {result.abi_pkg_diff_result}\n"
         log += f"  - Version:      {result.abi_pkg_diff_version_check}\n"
         log += f"  - Remark:       {result.abi_pkg_diff_remark}\n"
-        log += f"  - Output:       {"" if result.abi_pkg_diff_output is not None else result.abi_pkg_diff_output}\n"
+        output_summary = "" if result.abi_pkg_diff_output is not None else result.abi_pkg_diff_output
+        log += f"  - Output:       {output_summary}\n"
         if result.abi_pkg_diff_output is not None:
             indented = "\n".join(f"       {line}" for line in result.abi_pkg_diff_output.splitlines())
 
@@ -288,7 +289,8 @@ def single_repo_deb_abi_checker(repo_package_dir, apt_server_config, keep_temp=T
         logger.warning(f"[ABI_CHECKER]/[SINGLE_REPO]: No .deb file found, nothing to compare, returning success")
         return RETURN_ABI_NO_DIFF
 
-    logger.debug(f"[ABI_CHECKER]/[SINGLE_REPO]: Found {len(deb_files)} package{"s" if len(deb_files) > 1 else ""}")
+    plural = "s" if len(deb_files) > 1 else ""
+    logger.debug(f"[ABI_CHECKER]/[SINGLE_REPO]: Found {len(deb_files)} package{plural}")
 
     final_ret = 0
 

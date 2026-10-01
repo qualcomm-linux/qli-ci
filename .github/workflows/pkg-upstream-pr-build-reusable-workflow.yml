@@ -138,6 +138,7 @@ jobs:
         env:
           VARS_DEB_PKG_BOT_CI_NAME: ${{vars.DEB_PKG_BOT_CI_NAME}}
           VARS_DEB_PKG_BOT_CI_EMAIL: ${{vars.DEB_PKG_BOT_CI_EMAIL}}
+          INPUTS_PR_NUMBER: ${{inputs.pr-number}}
         run: |
           cd ./package-repo
 
@@ -171,7 +172,7 @@ jobs:
             --debian-branch=debian/upstream-pr \
             --no-pristine-tar \
             --upstream-vcs-tag=upstream/pr \
-            --upstream-version=${upstream_version}~pr${{inputs.pr-number}} \
+            --upstream-version=${upstream_version}~pr${INPUTS_PR_NUMBER} \
             --upstream-tag="upstream/%(version)s" \
             --import-msg=$'Merge commit after import of upstream %(version)s.\n\nFiltered out upstream .git/, .github/ and debian/ folders\n\nSigned-off-by: Github Service Bot <githubservice@qti.qualcomm.com>' \
             --filter=.git \
@@ -192,6 +193,7 @@ jobs:
           VARS_DEB_PKG_BOT_CI_NAME: ${{vars.DEB_PKG_BOT_CI_NAME}}
           VARS_DEB_PKG_BOT_CI_EMAIL: ${{vars.DEB_PKG_BOT_CI_EMAIL}}
           INPUTS_SUITE: ${{inputs.suite}}
+          INPUTS_PR_NUMBER: ${{inputs.pr-number}}
         run: |
           cd ./package-repo
 
@@ -203,10 +205,10 @@ jobs:
           gbp dch \
             --ignore-branch \
             --distribution=${INPUTS_SUITE} \
-            --new-version=${{env.upstream_version}}~pr${{inputs.pr-number}}-${{env.distro_revision}} \
+            --new-version=${upstream_version}~pr${INPUTS_PR_NUMBER}-${distro_revision} \
             --dch-opt="-b"
 
-          git commit -a -s -m "Update changelog for ${{env.upstream_version}}~pr${{inputs.pr-number}}-${{env.distro_revision}} Pull Request dry run"
+          git commit -a -s -m "Update changelog for ${upstream_version}~pr${INPUTS_PR_NUMBER}-${distro_revision} Pull Request dry run"
 
       - name: Build Debian Packages
         # Deliberately not using $/ here: it would resolve against the ref

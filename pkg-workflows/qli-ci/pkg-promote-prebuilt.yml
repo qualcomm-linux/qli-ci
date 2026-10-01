@@ -48,4 +48,5 @@ jobs:
       new-tag: ${{inputs.new-tag}}
       new-package-name: ${{inputs.new-package-name}}
       new-debian-version: ${{inputs.new-debian-version}}
-    secrets: inherit
+    secrets:
+      DEB_PKG_BOT_CI_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}

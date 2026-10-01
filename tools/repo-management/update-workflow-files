@@ -14,7 +14,6 @@ qualcomm-linux/qli-ci.
 # this implementation into sync with it.
 
 import argparse
-import json
 import shutil
 import subprocess
 import sys
@@ -25,6 +24,12 @@ from typing import List, Optional
 import pygit2
 import github
 from github.PullRequest import PullRequest
+
+from repo_common import (
+    expand_repo_name,
+    get_repo_custom_properties,
+    is_pkg_repo_approved,
+)
 
 WORKFLOW_SOURCE_REPO = "qualcomm-linux/qli-ci"
 WORKFLOW_SOURCE_DEFAULT_BRANCH = "main"
@@ -82,37 +87,27 @@ def get_token() -> str:
         raise CLIError("gh CLI not found. Install it and run 'gh auth login'.")
 
 
-def expand_repo_name(repo_name: str) -> str:
-    """Expand repo name to full owner/repo format."""
-    return f"qualcomm-linux/{repo_name}"
-
-
 def require_pkg_repo_compliance_gate(repo: str) -> None:
     """
-    COMPLIANCE GATE: the 'is-pkg-repo' custom property must be set to 'true'
-    before QLI CI may be enabled on a repository. This property is the record
-    that compliance approval has taken place for the repository, so this gate
-    is deliberate and MUST NOT be bypassable by any means (there is deliberately
-    no --force or equivalent). It is enforced in all modes, including --check.
-    See SPECIFICATION.md ("Compliance Gate: is-pkg-repo"). Do not relax this
+    COMPLIANCE GATE: refuse to proceed unless the 'is-pkg-repo' custom property
+    is set to 'true'. is_pkg_repo_approved() is the single source of truth for
+    this check (shared across all three tools); this wrapper adapts it to this
+    tool's CLIError-based error handling. The gate is deliberate and MUST NOT
+    be bypassable by any means (there is deliberately no --force or
+    equivalent), and it is enforced in all modes, including --check. See
+    SPECIFICATION.md ("Compliance Gate: is-pkg-repo"). Do not relax this
     without a corresponding specification change and compliance sign-off.
 
     Raises CLIError if the gate is not satisfied.
     """
     try:
-        result = subprocess.run(
-            ["gh", "api", f"repos/{repo}/properties/values"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        approved = is_pkg_repo_approved(repo)
     except FileNotFoundError:
         raise CLIError("gh CLI not found. Install it and run 'gh auth login'.")
     except subprocess.CalledProcessError as e:
         raise CLIError(f"failed to read custom properties for {repo}: {e.stderr.strip()}")
-    props = {item["property_name"]: item["value"] for item in json.loads(result.stdout)}
-    if props.get("is-pkg-repo") != "true":
-        current = props.get("is-pkg-repo", "unset")
+    if not approved:
+        current = get_repo_custom_properties(repo).get("is-pkg-repo", "unset")
         raise CLIError(
             f"custom property 'is-pkg-repo' is not set to 'true' (current: {current}). "
             "This compliance gate ensures compliance approval has taken place before "

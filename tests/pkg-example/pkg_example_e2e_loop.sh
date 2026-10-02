@@ -432,10 +432,13 @@ rebuild_qcom_debian_latest_tree() {
   chmod +x debian/rules
 
   if [[ "$lane" == "debusine" ]]; then
-    # Standalone debusine-*.yml set only. debusine-pr-hook.yml has no
-    # reusable-workflow call; debusine-release.yml calls qli-ci's
-    # debusine.yml and needs the ref patch.
+    # Standalone debusine-*.yml set only. debusine-pr-hook.yml calls qli-ci's
+    # debusine-source-package.yml and debusine-release.yml calls its
+    # debusine.yml, so both need the ref patch. Promotion and fork PRs branch
+    # off this tree, so the hook they run is already pinned to the ref under
+    # test and needs no per-PR sync-pr-hook step.
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-hook.yml" .github/workflows/debusine-pr-hook.yml
+    patch_qli_ref_file .github/workflows/debusine-pr-hook.yml
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
     patch_qli_ref_file .github/workflows/debusine-release.yml
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
@@ -1499,9 +1502,9 @@ cmd_wait_pr_build() {
   return 1
 }
 
-# Debusine lane equivalent of cmd_wait_pr_build: there is no PR-hook ref to
-# patch or dispatched run to watch here (debusine-pr-hook.yml does not
-# reference qli-ci at all), so this gates directly on "promote" and records
+# Debusine lane equivalent of cmd_wait_pr_build: there is no dispatched run to
+# watch here, and no PR-hook ref to re-patch (reset already pinned
+# debusine-pr-hook.yml on qcom/debian/latest), so this gates directly on "promote" and records
 # its result in the "prbuild" phase, keeping merge/release gating identical
 # across lanes.
 cmd_wait_debusine_check() {

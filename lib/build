@@ -87,7 +87,7 @@ EOF
 workflow_start_output=$(echo "suffix: $child_ci_suffix"|debusine workflow start -w "${parent_workspace}" --yaml create-child-workspace)
 echo "Workflow start output: $workflow_start_output" >&2
 workflow_id=$(echo "$workflow_start_output"|yq -r .id)
-debusine-action/lib/poll_workflow.py "$workflow_id"
+"$(dirname "$0")"/poll_workflow.py "$workflow_id"
 debusine archive suite create \
     --architecture all \
     --architecture amd64 \
@@ -135,12 +135,12 @@ echo "::notice::Debusine work request: https://${DEBUSINE_HOST}/${DEBUSINE_SCOPE
 echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
 echo "workflow_id=$workflow_id" >> "$GITHUB_OUTPUT"
 
-debusine-action/lib/poll_workflow.py "$workflow_id"
+"$(dirname "$0")"/poll_workflow.py "$workflow_id"
 
 # Fetch the build workspace's archive signing key now that the build has
 # completed, retrying past the Debusine empty-key race (see lib/fetch-signing-key).
 # Writing it to a file lets downstream steps reuse it without racing the
 # archive signing-key generation themselves.
-DEBUSINE_WORKSPACE="$workspace" debusine-action/lib/fetch-signing-key > signing-key.asc
+DEBUSINE_WORKSPACE="$workspace" "$(dirname "$0")"/fetch-signing-key > signing-key.asc
 
 echo "::endgroup::"

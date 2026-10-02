@@ -113,6 +113,51 @@ repo's `lib/` scripts, checked out at `qli-ci-ref`. If you change those
 interfaces, update all call sites in `.github/workflows/`. These were moved here
 (with history) from `qualcomm-linux/debusine-action`.
 
+## Debusine Reusable Workflow (`debusine.yml`)
+
+`.github/workflows/debusine.yml` is the standalone reusable workflow called by
+the `pkg-workflows/debusine/` stubs. It is split into `resolve`,
+`source-package`, `build`, and `release` jobs.
+
+- Source-package generation runs in the suite-matched builder image
+  `ghcr.io/qualcomm-linux/debusine-pkg-builder:<suite>`; Debusine client,
+  build orchestration, and release steps run in the `trixie` builder image.
+  Builder images are still published from `qualcomm-linux/debusine-action`.
+- Branch-to-suite resolution is explicit in `resolve`:
+  - `qli/debian/latest`, `qli-staging/debian/latest`, or `qcom/debian/latest`
+    (transitional) -> `forky`
+  - `qli/debian/trixie`, `qli-staging/debian/trixie`, or `qcom/debian/trixie`
+    (transitional) -> `trixie`
+- Branch prefix also determines the package version string identifier:
+  - `qli/` or `qcom/` (transitional) -> `qli`
+  - `qli-staging/` -> `qli+staging`
+
+Caller inputs: `target_branch`, `source_ref`, `release`, `qli-ci-ref`,
+`debusine-parent-workspace` (defaults to `qli-ci`), `workflow_kind`,
+`job_index`. Required secrets: `DEBUSINE_USER`, `DEBUSINE_TOKEN`,
+`DEBUSINE_RELEASE_TOKEN`.
+
+Design decisions to preserve:
+
+- Callers pass `qli-ci-ref` explicitly and internal `actions/checkout` steps
+  use it for `lib/`. Do not reintroduce workflow-SHA lookup from the job OIDC
+  token (or `id-token: write` in callers solely for that); this was replaced
+  in response to review feedback about depending on undocumented token claims.
+- Keep `debusine-release.yml` branch-local: it lives on packaging branches,
+  derives the release target from `github.ref_name`, and does not ask for a
+  separate `target-branch` input.
+- Preserve the source-package flow: generate from the checked-out packaging
+  tree, stage files from the generated `.changes`, upload as the
+  `source-package` artifact, and restore into the build workspace root before
+  Debusine import/build. Do not bypass it with ad hoc file moves.
+- Keep the `resolve` suite map in sync with the `check-branches` candidates in
+  `pkg-workflows/debusine/debusine-daily.yml`.
+
+When changing `debusine.yml` contracts, also update
+`pkg-workflows/debusine/*` (including `README.md` and `README.debusine.md`)
+and `tools/repo-management/debug_branch_mod.py`, then resync managed `pkg-*`
+repos with `tools/repo-management/update-workflow-files`.
+
 ## Do Not Reintroduce
 
 The following historical artifacts were intentionally removed from shared

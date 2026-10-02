@@ -25,6 +25,12 @@ import pygit2
 import github
 from github.PullRequest import PullRequest
 
+from repo_common import (
+    expand_repo_name,
+    get_repo_custom_properties,
+    is_pkg_repo_approved,
+)
+
 WORKFLOW_SOURCE_REPO = "qualcomm-linux/qli-ci"
 WORKFLOW_SOURCE_DEFAULT_BRANCH = "main"
 WORKFLOW_SOURCE_PATH = "pkg-workflows/debusine"
@@ -81,9 +87,32 @@ def get_token() -> str:
         raise CLIError("gh CLI not found. Install it and run 'gh auth login'.")
 
 
-def expand_repo_name(repo_name: str) -> str:
-    """Expand repo name to full owner/repo format."""
-    return f"qualcomm-linux/{repo_name}"
+def require_pkg_repo_compliance_gate(repo: str) -> None:
+    """
+    COMPLIANCE GATE: refuse to proceed unless the 'is-pkg-repo' custom property
+    is set to 'true'. is_pkg_repo_approved() is the single source of truth for
+    this check (shared across all three tools); this wrapper adapts it to this
+    tool's CLIError-based error handling. The gate is deliberate and MUST NOT
+    be bypassable by any means (there is deliberately no --force or
+    equivalent), and it is enforced in all modes, including --check. See
+    SPECIFICATION.md ("Compliance Gate: is-pkg-repo"). Do not relax this
+    without a corresponding specification change and compliance sign-off.
+
+    Raises CLIError if the gate is not satisfied.
+    """
+    try:
+        approved = is_pkg_repo_approved(repo)
+    except FileNotFoundError:
+        raise CLIError("gh CLI not found. Install it and run 'gh auth login'.")
+    except subprocess.CalledProcessError as e:
+        raise CLIError(f"failed to read custom properties for {repo}: {e.stderr.strip()}")
+    if not approved:
+        current = get_repo_custom_properties(repo).get("is-pkg-repo", "unset")
+        raise CLIError(
+            f"custom property 'is-pkg-repo' is not set to 'true' (current: {current}). "
+            "This compliance gate ensures compliance approval has taken place before "
+            "QLI CI is enabled on a repository and cannot be bypassed."
+        )
 
 
 def get_expected_files(branch: str) -> List[str]:
@@ -316,6 +345,13 @@ def main() -> None:
 
     full_repo = expand_repo_name(repo_name)
     token = get_token()
+
+    # COMPLIANCE GATE: refuse to deploy or compare workflow files unless the
+    # 'is-pkg-repo' compliance gate is satisfied. Enforced in all modes
+    # (--check, --pr, direct) and deliberately not bypassable; see
+    # SPECIFICATION.md.
+    require_pkg_repo_compliance_gate(full_repo)
+
     callbacks = pygit2.RemoteCallbacks(
         credentials=pygit2.UserPass("x-oauth-basic", token)
     )

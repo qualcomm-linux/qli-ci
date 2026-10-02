@@ -23,8 +23,7 @@ set -eu
 
 # Dependencies:
 #   ca-certificates and curl packages
-#   debusine-action/lib/signing-key-is-valid (invoked via that relative path, as
-#     poll_workflow.py is, so run this as debusine-action/lib/fetch-signing-key)
+#   signing-key-is-valid (invoked from the same directory as this script)
 
 # Inputs:
 #   DEBUSINE_HOST
@@ -46,7 +45,7 @@ url="https://deb.${DEBUSINE_HOST}/${DEBUSINE_SCOPE}/${DEBUSINE_WORKSPACE}/signin
 waited=0
 while :; do
     if key=$(curl -fsSu "${DEBUSINE_USER}:${DEBUSINE_TOKEN}" "$url") \
-       && printf '%s' "$key" | debusine-action/lib/signing-key-is-valid; then
+       && printf '%s' "$key" | "$(dirname "$0")"/signing-key-is-valid; then
         printf '%s' "$key"
         exit 0
     fi

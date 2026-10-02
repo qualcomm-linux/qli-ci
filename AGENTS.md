@@ -176,8 +176,11 @@ decision to bring them back:
 fully disposable sandbox: every lane rebuilds its default branch and
 `qcom/debian/latest` from scratch from this repo's own `pkg-workflows/*`
 templates and `tests/pkg-example/*` fixtures, and never depends on anything
-committed in `pkg-example`. Lanes run in order: debusine, prebuilt promote,
-Debian, Ubuntu.
+committed in `pkg-example`. Lanes run in order: debusine, fork PR check,
+prebuilt promote, Debian, Ubuntu. The fork-pr-check job
+exercises a real fork PR (via a dedicated write-access-less bot account) to
+validate `debusine-pr-check.yml`'s fork-PR identity resolution, not just its
+wiring.
 
 Source of truth for test architecture:
 

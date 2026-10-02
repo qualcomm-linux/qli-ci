@@ -98,6 +98,33 @@ admin access. `configure-repo` grants it automatically if the caller's
 own `gh` auth carries the `admin:org` scope; if it doesn't, granting
 fails and is reported so an org admin can grant it manually.
 
+### Fork Pull Request Workflows
+
+Workflows triggered by pull requests from forks must run, but only after
+approval for contributors from outside the organization. GitHub exposes
+this through a different setting depending on repository visibility.
+
+For a `public` repository, fork pull request workflows always run, and
+"Approval for running fork pull request workflows from contributors"
+must be set to require approval for all external contributors:
+
+| Setting           | Value                       |
+|-------------------|-----------------------------|
+| `approval_policy` | `all_external_contributors` |
+
+For a `private` or `internal` repository, the "Fork pull request
+workflows" settings must be:
+
+| Setting                                    | Value   |
+|--------------------------------------------|---------|
+| Run workflows from fork pull requests      | enabled |
+| Send write tokens to workflows             | disabled |
+| Send secrets and variables to workflows    | disabled |
+| Require approval for fork pull request workflows | enabled |
+
+Reading or changing either setting requires admin access to the
+repository.
+
 ### GitHub Environment: Production
 
 A GitHub Actions environment named `Production` must exist with the

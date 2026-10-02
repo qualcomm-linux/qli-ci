@@ -160,7 +160,7 @@ retargeted.
 3. Recreate `qcom/debian/latest` as a fresh orphan branch, seeded from
    `tests/pkg-example/debian/` plus a lane-specific PR-hook/release set:
    - debusine lane: `debusine-pr-hook.yml`, `debusine-release.yml`, and
-     `README.debusine.md` only (`debusine-release.yml` ref-patched as above) -
+     `README.debusine.md` only (the two workflows ref-patched as above) -
      deliberately no `pkg-pr-hook.yml`, so this lane's promotion PRs (opened
      via `pkg-promote`, since no debusine-specific promote flow exists yet)
      only exercise the standalone debusine PR-hook/check split, not
@@ -197,8 +197,8 @@ Per enabled lane:
    - Debian/Ubuntu lanes: `sync-pr-hook <lane> <tag>` then
      `wait-pr-build <lane> <tag>`
    - Debusine lane: `wait-debusine-check <lane> <tag>` (no `sync-pr-hook`:
-     `debusine-pr-hook.yml` does not reference `qli-ci` at all, so there is
-     nothing to patch)
+     reset already ref-patched `debusine-pr-hook.yml` on `qcom/debian/latest`,
+     and promotion PRs branch off it)
    - `merge-pr <lane> <tag>`
    - `release-tag <lane> <tag>` — Debusine lane also dispatches
      `debusine-release.yml` here (see Debusine Lane Check Contract below)
@@ -243,11 +243,20 @@ validates the wiring.
 write access to `pkg-example`. GitHub therefore never applies the
 restricted-token/empty-`pull_requests[]` treatment to those PRs -
 `workflow_run.pull_requests[0]` is already populated correctly for them. That
-means the tag loop above validates the hook/check *wiring*, but not the
-specific bug `debusine-pr-check.yml`'s `resolve-pr` job fixes: resolving PR
-identity from the commit SHA rather than trusting `workflow_run.pull_requests`
-(empty for genuine fork PRs). A regression that reintroduced the
-`pull_requests[0]` read would pass the tag loop above without being caught.
+means the tag loop above validates the hook/check *wiring*, but not the two
+things that only differ for a genuine fork PR:
+
+- PR identity: `debusine-pr-check.yml`'s `resolve-pr` job must find the PR by
+  head `owner:branch`, since `workflow_run.pull_requests` is empty and
+  `listPullRequestsAssociatedWithCommit` does not see fork-only commits.
+- Untrusted code: the trusted check must never check out or execute the PR.
+  The hook builds the source package with the fork's read-only, secret-less
+  token, and the check only takes that artifact as data
+  (`import_source_package` in `debusine.yml`).
+  `actions/checkout` also refuses fork PR checkouts from `workflow_run`, so a
+  regression here fails loudly rather than silently.
+
+A regression in either would pass the tag loop above without being caught.
 
 `fork-pr-check` closes that gap with a real fork PR, run as a standalone job
 (after the debusine lane, without resetting `pkg-example` itself):
@@ -355,8 +364,9 @@ To avoid stale duplicate PR Build runs:
 - e2e waits for PR Build using the exact expected PR head SHA.
 - if multiple matching runs exist, the latest by `createdAt` is selected.
 
-The debusine lane has no equivalent step: `debusine-pr-hook.yml` never
-references `qli-ci`, so there is nothing to re-patch and re-push.
+The debusine lane has no equivalent step: reset already ref-patches
+`debusine-pr-hook.yml` on `qcom/debian/latest`, and promotion PRs branch off
+it, so there is nothing to re-patch and re-push.
 
 ## Release Approval Gates
 

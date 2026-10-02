@@ -103,6 +103,9 @@ transient branch (for example `debian/pr/*`), routing can fall back to
 - `.github/workflows/debusine.yml`
   - standalone Debusine reusable workflow called by the `pkg-workflows/debusine/`
     stubs; checks out `lib/` at its `qli-ci-ref` input
+- `.github/workflows/debusine-source-package.yml`
+  - untrusted half of Debusine PR CI, called from the `pull_request` hook
+    stub: generates the source package from the PR head and uploads it
 - `pkg-workflows/debusine/*`
   - source Debusine stub workflows copied into managed `pkg-*` repos
 
@@ -134,7 +137,7 @@ the `pkg-workflows/debusine/` stubs. It is split into `resolve`,
 
 Caller inputs: `target_branch`, `source_ref`, `release`, `qli-ci-ref`,
 `debusine-parent-workspace` (defaults to `qli-ci`), `workflow_kind`,
-`job_index`. Required secrets: `DEBUSINE_USER`, `DEBUSINE_TOKEN`,
+`job_index`, `import_source_package`. Required secrets: `DEBUSINE_USER`, `DEBUSINE_TOKEN`,
 `DEBUSINE_RELEASE_TOKEN`.
 
 Design decisions to preserve:
@@ -151,7 +154,16 @@ Design decisions to preserve:
   `source-package` artifact, and restore into the build workspace root before
   Debusine import/build. Do not bypass it with ad hoc file moves.
 - Keep the `resolve` suite map in sync with the `check-branches` candidates in
-  `pkg-workflows/debusine/debusine-daily.yml`.
+  `pkg-workflows/debusine/debusine-daily.yml` and in
+  `debusine-source-package.yml`.
+- Never check out or execute PR code in a trusted (`workflow_run`) context.
+  PR CI builds the source package in the untrusted `pull_request` hook via
+  `debusine-source-package.yml`; `debusine-pr-check.yml` copies that artifact
+  into its own run and calls `debusine.yml` with `import_source_package: true`,
+  which skips the PR checkout and validates the artifact as data with
+  `lib/import-source-package`. Do not opt into `allow-unsafe-pr-checkout` or
+  `pull_request_target` to work around this. `import_source_package` refuses
+  `release`.
 
 When changing `debusine.yml` contracts, also update
 `pkg-workflows/debusine/*` (including `README.md` and `README.debusine.md`)

@@ -149,8 +149,8 @@ retargeted.
    `pkg-example`-specific `pkg-pr-build-check.yml` fixture (also ref-patched),
    and the full Debusine default-branch set (`debusine-daily.yml`,
    `debusine-pr-check.yml`, `debusine-release.yml`, `README.debusine.md`,
-   copied verbatim since they call `debusine-action`, not `qli-ci`, so there
-   is no ref to patch). `debusine-release.yml` is dispatched against
+   also ref-patched since they call qli-ci's `debusine.yml` reusable
+   workflow). `debusine-release.yml` is dispatched against
    `qcom/debian/latest`, not this branch, but it still has to be seeded
    here too: `workflow_dispatch` requires a workflow file to exist on the
    repository's actual default branch to be dispatchable via the API at
@@ -160,7 +160,7 @@ retargeted.
 3. Recreate `qcom/debian/latest` as a fresh orphan branch, seeded from
    `tests/pkg-example/debian/` plus a lane-specific PR-hook/release set:
    - debusine lane: `debusine-pr-hook.yml`, `debusine-release.yml`, and
-     `README.debusine.md` only (copied verbatim, same reasoning as above) -
+     `README.debusine.md` only (`debusine-release.yml` ref-patched as above) -
      deliberately no `pkg-pr-hook.yml`, so this lane's promotion PRs (opened
      via `pkg-promote`, since no debusine-specific promote flow exists yet)
      only exercise the standalone debusine PR-hook/check split, not
@@ -231,8 +231,8 @@ same field name debian/ubuntu use for their PR-build wait), so `merge-pr` and
 
 `release-tag` additionally dispatches `debusine-release.yml` directly against
 `qcom/debian/latest` with `release=false` for the debusine lane only: it is a
-separate, standalone release path copied from `debusine-action` and is not
-exercised by `pkg-release.yml`'s own internal Debusine helper calls, so it
+separate, standalone release path (via the `debusine.yml` reusable
+workflow) and is not exercised by `pkg-release.yml`'s own internal Debusine helper calls, so it
 needs its own validation. `release=false` because the real release already
 happened via the preceding `pkg-release.yml` dispatch; this step only
 validates the wiring.

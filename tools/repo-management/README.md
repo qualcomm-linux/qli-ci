@@ -262,14 +262,14 @@ When `update-workflow-files` is invoked with `--debug-source-branch
 sourced workflow files are modified before being deployed or compared:
 
 - Every `uses:
-  qualcomm-linux/debusine-action/.github/workflows/debusine.yml@main`
+  qualcomm-linux/qli-ci/.github/workflows/debusine.yml@main`
   value is rewritten to `@<branch>`.
-- The corresponding `with.debusine-action-ref: main` value is rewritten
+- The corresponding `with.qli-ci-ref: main` value is rewritten
   to `<branch>`.
 
 This allows workflow files sourced from a feature branch of qli-ci to be
-tested while also pointing to the same branch name for
-`qualcomm-linux/debusine-action` runtime calls. This modification is not
+tested while also pointing the Debusine reusable workflow and its `lib/`
+helper checkout at that same branch. This modification is not
 applied in normal operation.
 
 Using `--debug-source-branch` on a `pkg-*` repository is an error if any

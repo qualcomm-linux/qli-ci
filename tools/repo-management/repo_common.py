@@ -15,7 +15,26 @@ This module is imported by those tools; it is not meant to be run directly.
 
 import json
 import subprocess
+import urllib.error
+import urllib.request
 from typing import Dict, List
+
+
+# Live list of repositories that QLI CI tooling is permitted to act on. The
+# tools fetch this at runtime and refuse to touch a repository that is not
+# listed, unless --force is given. This is an operational targeting guard, not
+# a statement about repository state, so it is documented in README.md rather
+# than SPECIFICATION.md. It is distinct from, and weaker than, the is-pkg-repo
+# compliance gate (see is_pkg_repo_approved): that gate is never bypassable;
+# this one is bypassable with --force.
+ACTIVE_REPO_LIST_URL = (
+    "https://github.com/qualcomm-linux/qli-ci/raw/refs/heads/"
+    "active-repo-list/active-repo.list"
+)
+
+
+class ActiveRepoListError(Exception):
+    """Raised when the live active-repo list cannot be fetched."""
 
 
 def run_gh_command(args: List[str]) -> str:
@@ -62,3 +81,45 @@ def is_pkg_repo_approved(repo: str) -> bool:
     """
     props = get_repo_custom_properties(repo)
     return props.get("is-pkg-repo") == "true"
+
+
+def fetch_active_repo_list() -> List[str]:
+    """
+    Fetch the live list of active repositories (see ACTIVE_REPO_LIST_URL).
+
+    Returns the repository names (short, un-expanded form, one per line),
+    ignoring blank lines. Raises ActiveRepoListError if the list cannot be
+    fetched.
+    """
+    try:
+        with urllib.request.urlopen(ACTIVE_REPO_LIST_URL) as response:
+            body = response.read().decode("utf-8")
+    except urllib.error.URLError as e:
+        raise ActiveRepoListError(
+            f"could not fetch active-repo list from {ACTIVE_REPO_LIST_URL}: {e}"
+        )
+    return [line.strip() for line in body.splitlines() if line.strip()]
+
+
+def is_repo_active(repo_name: str) -> bool:
+    """
+    Return True if repo_name is on the live active-repo list.
+
+    repo_name is the short, un-expanded name (e.g. 'pkg-fastrpc'), matching the
+    form the list stores. Raises ActiveRepoListError if the list cannot be
+    fetched.
+    """
+    return repo_name in fetch_active_repo_list()
+
+
+# Shared message appended when refusing to act on a repository that is not on
+# the active-repo list, so every tool points at --force consistently.
+ACTIVE_REPO_FORCE_HINT = "Use --force to bypass this check."
+
+
+def active_repo_refusal_message(repo_name: str) -> str:
+    """Return the standard error text for a repo that is not on the active list."""
+    return (
+        f"Repository '{repo_name}' is not on the active-repo list "
+        f"({ACTIVE_REPO_LIST_URL}). " + ACTIVE_REPO_FORCE_HINT
+    )

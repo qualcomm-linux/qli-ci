@@ -6,14 +6,12 @@
 # Note: in addition to the default branch, this workflow file must also be
 # copied into each packaging branch in order to function as intended.
 
-# This workflow intentionally does nothing except exist and complete: its
-# only purpose is to give debusine-pr-check.yml's `workflow_run` trigger
-# something to watch. It must not write anything (no commit statuses, no
-# secrets): pull_request runs triggered by a fork get a read-only
-# GITHUB_TOKEN and no repository secrets, regardless of the permissions
-# declared below, so any write attempted here would fail for fork PRs. All
-# status reporting (pending and final) happens in debusine-pr-check.yml,
-# which runs in the trusted workflow_run context instead.
+# This is the untrusted half of Debusine PR CI. For fork PRs it runs with a
+# read-only GITHUB_TOKEN and no repository secrets, regardless of the
+# permissions declared below, so it must not need any. It only generates the
+# source package from the PR head and uploads it as an artifact.
+# debusine-pr-check.yml (trusted, workflow_run) then downloads that artifact
+# as data, submits it to Debusine, and does all commit-status reporting.
 
 name: Debusine PR Hook
 
@@ -28,9 +26,13 @@ permissions:
   contents: read
 
 jobs:
-  acknowledge:
-    name: Acknowledge PR
-    runs-on: ubuntu-latest
-    steps:
-      - name: No-op
-        run: echo "Debusine PR Check will report status for this commit."
+  source-package:
+    name: Source package
+    if: ${{ vars.DEBUSINE_WORKFLOWS_DISABLED != 'true' }}
+    permissions:
+      contents: read
+      packages: read
+    uses: qualcomm-linux/qli-ci/.github/workflows/debusine-source-package.yml@main
+    with:
+      target_branch: ${{ github.base_ref }}
+      qli-ci-ref: main

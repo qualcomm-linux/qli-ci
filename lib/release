@@ -66,6 +66,6 @@ END
 )
 echo "Workflow start output: $workflow_start_output" >&2
 workflow_id=$(echo "$workflow_start_output"|yq -r .id)
-debusine-action/lib/poll_workflow.py "$workflow_id"
+"$(dirname "$0")"/poll_workflow.py "$workflow_id"
 
 echo "::endgroup::"

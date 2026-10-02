@@ -26,9 +26,12 @@ import github
 from github.PullRequest import PullRequest
 
 from repo_common import (
+    active_repo_refusal_message,
     expand_repo_name,
     get_repo_custom_properties,
     is_pkg_repo_approved,
+    is_repo_active,
+    ActiveRepoListError,
 )
 
 WORKFLOW_SOURCE_REPO = "qualcomm-linux/qli-ci"
@@ -312,6 +315,11 @@ def main() -> None:
         help="do not delete the temporary directory on exit; print its path for inspection",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="proceed even if the repository is not on the active-repo list",
+    )
+    parser.add_argument(
         "--debug-source-branch",
         default=WORKFLOW_SOURCE_DEFAULT_BRANCH,
         metavar="BRANCH",
@@ -344,6 +352,17 @@ def main() -> None:
     explicit_branches = parsed.branches
 
     full_repo = expand_repo_name(repo_name)
+
+    # Active-repo targeting guard: refuse to act on repositories that are not
+    # on the live active-repo list, unless --force is given. Checked up front,
+    # before cloning or the compliance gate.
+    if not parsed.force:
+        try:
+            if not is_repo_active(repo_name):
+                raise CLIError(active_repo_refusal_message(repo_name))
+        except ActiveRepoListError as e:
+            raise CLIError(str(e))
+
     token = get_token()
 
     # COMPLIANCE GATE: refuse to deploy or compare workflow files unless the

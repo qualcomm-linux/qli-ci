@@ -11,7 +11,8 @@ Arguments:
 Options:
     --check         Only report what needs changing without making changes
     --force         Proceed even if the public-visibility prerequisite check
-                    fails. The 'is-pkg-repo' compliance gate is NOT bypassable
+                    fails, or if the repository is not on the active-repo list.
+                    The 'is-pkg-repo' compliance gate is NOT bypassable
                     by --force (or anything else); see SPECIFICATION.md.
     --production    Set DEBUSINE_HOST to debusine.qualcomm.com (default)
     --stage         Set DEBUSINE_HOST to stage.debusine.qualcomm.com
@@ -32,11 +33,14 @@ import tempfile
 from typing import Dict, List, Optional
 
 from repo_common import (
+    active_repo_refusal_message,
     check_gh_auth,
     expand_repo_name,
     get_repo_custom_properties,
     is_pkg_repo_approved,
+    is_repo_active,
     run_gh_command,
+    ActiveRepoListError,
 )
 
 # Default environment - change this constant to swap the default
@@ -547,6 +551,18 @@ def main():
 
     # Expand repo name
     full_repo = expand_repo_name(repo_name)
+
+    # Active-repo targeting guard: refuse to act on repositories that are not
+    # on the live active-repo list, unless --force is given. Checked up front,
+    # before any repository state is read or changed.
+    if not force:
+        try:
+            if not is_repo_active(repo_name):
+                print(f"Error: {active_repo_refusal_message(repo_name)}", file=sys.stderr)
+                return 1
+        except ActiveRepoListError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
 
     # Configure repository
     return configure_repository(full_repo, debusine_host, dry_run, force)

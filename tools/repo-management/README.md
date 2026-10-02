@@ -24,6 +24,30 @@ what SPECIFICATION.md says.
   `gh auth refresh -h github.com -s workflow`
 - Appropriate permissions on the target repository
 
+## Active-repo list
+
+`configure-repo`, `set-repo-secrets`, and `update-workflow-files` only
+act on repositories that appear on a live **active-repo list**, published
+at:
+
+```
+https://github.com/qualcomm-linux/qli-ci/raw/refs/heads/active-repo-list/active-repo.list
+```
+
+The list is a plain-text file with one repository name per line (short
+form, e.g. `pkg-fastrpc`). Each tool fetches it live at startup and
+checks the requested repository against it before doing anything else. If
+the repository is not on the list, the tool fails with an error (and
+notes that `--force` is available to bypass the check). If the list
+cannot be fetched, the tool fails rather than guessing.
+
+Passing `--force` to any of the three tools skips this check, allowing
+them to act on a repository that is not on the list. This is distinct
+from the `is-pkg-repo` compliance gate described in SPECIFICATION.md,
+which is a property of repository state and is **never** bypassable; the
+active-repo list is an operational targeting guard and `--force` bypasses
+it only.
+
 ## Tools
 
 ### enable-repo
@@ -65,9 +89,10 @@ Debusine workflows.
 **Options:**
 - `--check`: Only report what needs changing without making changes
 - `--force`: Proceed even if the public-visibility prerequisite check
-  fails. The `is-pkg-repo` compliance gate is **not** bypassable by
-  `--force` (or anything else); see the "Compliance Gate" section of
-  SPECIFICATION.md
+  fails, or if the repository is not on the [active-repo
+  list](#active-repo-list). The `is-pkg-repo` compliance gate is **not**
+  bypassable by `--force` (or anything else); see the "Compliance Gate"
+  section of SPECIFICATION.md
 - `--production`: Set `DEBUSINE_HOST` to `debusine.qualcomm.com`
   (default)
 - `--stage`: Set `DEBUSINE_HOST` to `stage.debusine.qualcomm.com`
@@ -102,7 +127,7 @@ visibility, without ever needing to know a secret's value).
 
 **Usage:**
 ```bash
-./set-repo-secrets [--check] <repo-name>
+./set-repo-secrets [--check] [--force] <repo-name>
 ```
 
 **Arguments:**
@@ -112,6 +137,8 @@ visibility, without ever needing to know a secret's value).
 **Options:**
 - `--check`: Report whether each required secret is present and when it
   was last updated, without setting anything
+- `--force`: Proceed even if the repository is not on the [active-repo
+  list](#active-repo-list)
 
 **What it sets:**
 
@@ -164,7 +191,7 @@ changes directly to each branch that needs updating.
 
 **Usage:**
 ```bash
-./update-workflow-files [--check | --pr | --direct] [--no-clean] [--debug-source-branch <branch>] <repo-name> [branch ...]
+./update-workflow-files [--check | --pr | --direct] [--no-clean] [--force] [--debug-source-branch <branch>] <repo-name> [branch ...]
 ```
 
 **Arguments:**
@@ -186,6 +213,8 @@ changes directly to each branch that needs updating.
   a future release
 - `--no-clean`: Leave the temporary directory on exit and print its path
   (useful with `--check` to inspect the commit that would be pushed)
+- `--force`: Proceed even if the repository is not on the [active-repo
+  list](#active-repo-list)
 - `--debug-source-branch <branch>`: Branch of
   `qualcomm-linux/qli-ci` to use as the source (default:
   `main`). Rewrites `@main` references in workflow files to `@<branch>`

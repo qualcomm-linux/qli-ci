@@ -1,10 +1,10 @@
 # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 
-"""Rewrite debusine-action branch references in packaging workflow YAML files."""
+"""Rewrite Debusine reusable workflow branch references in packaging workflow YAML files."""
 
 # This is a hack that modifies the stub workflow files to use a branch of
-# debusine-action to supply the reusable workflow to allow for development and
+# qli-ci to supply the reusable workflow to allow for development and
 # debugging of changes to the reusable workflow in a branch without having to
 # land the changes in the main branch first. For this to work, it has to have
 # some knowledge of the structure of the workflow stubs, which is the necessary
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import ruamel.yaml
 
-DEBUSINE_USES_PREFIX = "qualcomm-linux/debusine-action/.github/workflows/debusine.yml@"
+DEBUSINE_USES_PREFIX = "qualcomm-linux/qli-ci/.github/workflows/debusine.yml@"
 DEBUSINE_USES_MAIN = DEBUSINE_USES_PREFIX + "main"
 
 
@@ -44,12 +44,12 @@ def modify_workflow_files(directory: Path, branch: str) -> None:
                         f"{path}: unexpected ref in uses: {uses!r} (expected @main)"
                     )
                 with_block = job.get("with")
-                if not isinstance(with_block, dict) or with_block.get("debusine-action-ref") != "main":
+                if not isinstance(with_block, dict) or with_block.get("qli-ci-ref") != "main":
                     raise ValueError(
-                        f"{path}: debusine-action-ref must be 'main' when uses is {DEBUSINE_USES_MAIN!r}"
+                        f"{path}: qli-ci-ref must be 'main' when uses is {DEBUSINE_USES_MAIN!r}"
                     )
                 job["uses"] = DEBUSINE_USES_PREFIX + branch
-                with_block["debusine-action-ref"] = branch
+                with_block["qli-ci-ref"] = branch
                 modified = True
         if modified:
             with path.open("w") as f:

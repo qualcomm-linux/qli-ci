@@ -470,11 +470,31 @@ perform_repo_reset() {
   fi
 
   # 2. Wipe all tags and ephemeral/packaging branches.
+  #
+  # Query the remote's live tag list directly instead of relying on the
+  # local clone's `git tag` (populated at clone time, in cmd_prepare_repo,
+  # well before this point) - a stale or racy local view here would leave
+  # tags behind on origin, which breaks pkg-promote's "upstream tag not
+  # already part of the repo" guard on a later promote-tag call. Retry a
+  # few times before giving up, in case a delete hasn't propagated yet.
   log "Wiping tags and qcom/*, upstream/latest, debian/pr/* branches"
-  local tag
-  for tag in $(git tag); do
-    git push origin --delete "$tag" >/dev/null 2>&1 || true
+  local remaining_tags attempt tag
+  for attempt in 1 2 3; do
+    for tag in $(git ls-remote --tags origin | awk '{print $2}' | grep -v '\^{}$' | sed 's#^refs/tags/##'); do
+      git push origin --delete "$tag" >/dev/null 2>&1 || true
+    done
+    remaining_tags="$(git ls-remote --tags origin | awk '{print $2}' | grep -v '\^{}$' | sed 's#^refs/tags/##')"
+    if [[ -z "$remaining_tags" ]]; then
+      break
+    fi
+    log "Tags still present on origin after wipe attempt ${attempt}/3: $(echo "$remaining_tags" | tr '\n' ' ')"
+    sleep 3
   done
+  if [[ -n "$remaining_tags" ]]; then
+    log "Failed to wipe all tags on origin after 3 attempts: $(echo "$remaining_tags" | tr '\n' ' ')"
+    return 1
+  fi
+  git tag -l | xargs -r git tag -d >/dev/null 2>&1 || true
 
   git push origin --delete upstream/latest >/dev/null 2>&1 || true
   local branch

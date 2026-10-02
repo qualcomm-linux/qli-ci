@@ -20,6 +20,8 @@ set -ex
 # Outputs:
 #   `git push origin`
 
+lib_dir=$(cd "$(dirname "$0")" && pwd)
+
 cd srcpkg
 # Must not be UNRELEASED
 release_ref=$(git bundle list-heads ../release.bundle|awk '{print $2}')
@@ -32,7 +34,7 @@ fi
 
 previous_version=$(dpkg-parsechangelog -SVersion)
 pkg_version_id="${PACKAGE_VERSION_IDENTIFIER:-qcom}"
-next_version=$(../debusine-action/lib/next_qcom_version "$previous_version" "$pkg_version_id")
+next_version=$("$lib_dir"/next_qcom_version "$previous_version" "$pkg_version_id")
 case "$next_version" in
     *~) next_dev_version="$next_version" ;;
     *) next_dev_version="${next_version}~" ;;

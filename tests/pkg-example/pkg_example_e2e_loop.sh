@@ -379,11 +379,12 @@ rebuild_default_branch_tree() {
   cp "${QLI_CI_ROOT}/tests/pkg-example/pkg-pr-build-check.yml" .github/workflows/pkg-pr-build-check.yml
   patch_qli_ref_file .github/workflows/pkg-pr-build-check.yml
 
-  # Debusine default-branch set. These call debusine-action, not qli-ci, so
-  # there is no ref to patch: copying verbatim from this checkout already
-  # reflects the ref under test.
+  # Debusine default-branch set. These call qli-ci's debusine.yml reusable
+  # workflow, so they need the same ref patch.
   cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-daily.yml" .github/workflows/debusine-daily.yml
+  patch_qli_ref_file .github/workflows/debusine-daily.yml
   cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-check.yml" .github/workflows/debusine-pr-check.yml
+  patch_qli_ref_file .github/workflows/debusine-pr-check.yml
   cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
 
   # debusine-release.yml is dispatched against qcom/debian/latest, not this
@@ -391,6 +392,7 @@ rebuild_default_branch_tree() {
   # repository's actual default branch to be dispatchable via the API at
   # all, regardless of --ref. Seed it here too for that reason alone.
   cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
+  patch_qli_ref_file .github/workflows/debusine-release.yml
 }
 
 # Populates the current (empty) working tree with the qcom/debian/latest
@@ -418,11 +420,12 @@ rebuild_qcom_debian_latest_tree() {
   chmod +x debian/rules
 
   if [[ "$lane" == "debusine" ]]; then
-    # Standalone debusine-*.yml set only, no qli-ci ref to patch (see
-    # comment in rebuild_default_branch_tree above): these call
-    # debusine-action, not qli-ci.
+    # Standalone debusine-*.yml set only. debusine-pr-hook.yml has no
+    # reusable-workflow call; debusine-release.yml calls qli-ci's
+    # debusine.yml and needs the ref patch.
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-hook.yml" .github/workflows/debusine-pr-hook.yml
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
+    patch_qli_ref_file .github/workflows/debusine-release.yml
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
   else
     cp "${QLI_CI_ROOT}/pkg-workflows/debian/pkg-pr-hook.yml" .github/workflows/pkg-pr-hook.yml
@@ -1483,9 +1486,9 @@ cmd_release_tag() {
 
   local release_url="$LAST_RUN_URL"
 
-  # debusine-release.yml is a separate, standalone release path copied from
-  # debusine-action and is not exercised by pkg-release.yml's own internal
-  # Debusine helper calls, so it needs its own dispatch. release=false: the
+  # debusine-release.yml is a separate, standalone release path (via the
+  # debusine.yml reusable workflow) and is not exercised by pkg-release.yml's
+  # own internal Debusine helper calls, so it needs its own dispatch. release=false: the
   # real release already happened above, this only validates the wiring.
   if [[ "$lane" == "debusine" ]]; then
     if ! dispatch_workflow_and_wait .github/workflows/debusine-release.yml "$lane_branch" -f release=false; then

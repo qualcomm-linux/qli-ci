@@ -19,8 +19,8 @@ on:
         type: boolean
         required: true
         default: true
-      debusine-action-ref:
-        description: Ref of qualcomm-linux/debusine-action to check out for helper scripts
+      qli-ci-ref:
+        description: Ref of qualcomm-linux/qli-ci to check out for helper scripts
         type: string
         required: false
         default: main
@@ -63,7 +63,7 @@ jobs:
     outputs:
       suite: ${{ steps.map_suite.outputs.suite }}
       source_ref: ${{ steps.determine_checkout_ref.outputs.source_ref }}
-      debusine_action_ref: ${{ inputs.debusine-action-ref }}
+      qli_ci_ref: ${{ inputs.qli-ci-ref }}
       debusine_target_workspace: ${{ steps.map_suite.outputs.debusine_target_workspace }}
       package_version_identifier: ${{ steps.map_suite.outputs.package_version_identifier }}
       environment: ${{ steps.map_suite.outputs.environment }}
@@ -155,9 +155,9 @@ jobs:
           ref: ${{ needs.resolve.outputs.source_ref }}
       - uses: actions/checkout@v6
         with:
-          repository: qualcomm-linux/debusine-action
-          ref: ${{ needs.resolve.outputs.debusine_action_ref }}
-          path: debusine-action
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ needs.resolve.outputs.qli_ci_ref }}
+          path: qli-ci
       - name: Prepare release
         if: ${{ inputs.release }}
         env:
@@ -165,12 +165,12 @@ jobs:
           DEBUSINE_TARGET_WORKSPACE: ${{ needs.resolve.outputs.debusine_target_workspace }}
         run: |
           set -ex
-          debusine-action/lib/prepare-release
+          qli-ci/lib/prepare-release
       - id: generate-source-package
         name: Generate source package
         run: |
           set -ex
-          debusine-action/lib/generate-source-package
+          qli-ci/lib/generate-source-package
 
       - name: Stage source package files
         env:
@@ -214,9 +214,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          repository: qualcomm-linux/debusine-action
-          ref: ${{ needs.resolve.outputs.debusine_action_ref }}
-          path: debusine-action
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ needs.resolve.outputs.qli_ci_ref }}
+          path: qli-ci
 
       - name: Download source package files
         uses: actions/download-artifact@v8
@@ -246,7 +246,7 @@ jobs:
           EXTRA_BUILD_DEP_WORKSPACES: ${{ needs.resolve.outputs.extra_build_dep_workspaces }}
         run: |
           set -ex
-          debusine-action/lib/build
+          qli-ci/lib/build
 
       - name: Generate summary
         if: ${{ !cancelled() }}
@@ -263,7 +263,7 @@ jobs:
           SUITE: ${{ needs.resolve.outputs.suite }}
           BUILD_RESULT: ${{ steps.build.outcome }}
         run: |
-          debusine-action/lib/generate-step-summary
+          qli-ci/lib/generate-step-summary
 
       - name: Generate sources tar
         env:
@@ -279,7 +279,7 @@ jobs:
           TARGET_BRANCH: ${{ inputs.target_branch }}
           JOB_INDEX: ${{ inputs.job_index }}
         run: |
-          debusine-action/lib/generate-sources-tar
+          qli-ci/lib/generate-sources-tar
 
       - name: Upload metadata
         uses: actions/upload-artifact@v7
@@ -325,9 +325,9 @@ jobs:
           ref: ${{ needs.resolve.outputs.source_ref }}
       - uses: actions/checkout@v6
         with:
-          repository: qualcomm-linux/debusine-action
-          ref: ${{ needs.resolve.outputs.debusine_action_ref }}
-          path: debusine-action
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ needs.resolve.outputs.qli_ci_ref }}
+          path: qli-ci
       - name: Download release bundle
         uses: actions/download-artifact@v8
         with:
@@ -346,5 +346,5 @@ jobs:
           SUITE: ${{ needs.resolve.outputs.suite }}
         run: |
           set -ex
-          debusine-action/lib/release
-          debusine-action/lib/push-release
+          qli-ci/lib/release
+          qli-ci/lib/push-release

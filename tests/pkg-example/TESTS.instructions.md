@@ -70,13 +70,16 @@ The workflow is intentionally split into sequential jobs for GitHub UI clarity:
 
 1. `pkg-example e2e (global slot)`
 2. `pkg-example e2e (debusine lane)`
-3. `pkg-example e2e (prebuilt promote lane)`
-4. `pkg-example e2e (debian lane)`
-5. `pkg-example e2e (ubuntu lane)`
+3. `pkg-example e2e (fork PR check)`
+4. `pkg-example e2e (prebuilt promote lane)`
+5. `pkg-example e2e (debian lane)`
+6. `pkg-example e2e (ubuntu lane)`
 
-Execution is sequential, not parallel:
+Execution model:
 
 - Debusine lane runs first, before every other lane.
+- Fork PR check runs after the debusine lane (success, failure, or skipped),
+  so it never races that lane's reset, and before the prebuilt promote lane.
 - Prebuilt promote lane runs before Debian lane.
 - Debian lane runs before Ubuntu lane.
 
@@ -98,6 +101,7 @@ defaults via `(vars.X || 'false') != 'true'` so a missing variable never
 accidentally disables a lane):
 
 - `DISABLE_DEBUSINE_PATH`
+- `DISABLE_FORK_PR_PATH`
 - `DISABLE_PREBUILT_PATH`
 - `DISABLE_DEBIAN_PATH`
 - `DISABLE_UBUNTU_PATH`
@@ -156,7 +160,7 @@ retargeted.
 3. Recreate `qcom/debian/latest` as a fresh orphan branch, seeded from
    `tests/pkg-example/debian/` plus a lane-specific PR-hook/release set:
    - debusine lane: `debusine-pr-hook.yml`, `debusine-release.yml`, and
-     `README.debusine.md` only (`debusine-release.yml` ref-patched as above) -
+     `README.debusine.md` only (the two workflows ref-patched as above) -
      deliberately no `pkg-pr-hook.yml`, so this lane's promotion PRs (opened
      via `pkg-promote`, since no debusine-specific promote flow exists yet)
      only exercise the standalone debusine PR-hook/check split, not
@@ -193,8 +197,8 @@ Per enabled lane:
    - Debian/Ubuntu lanes: `sync-pr-hook <lane> <tag>` then
      `wait-pr-build <lane> <tag>`
    - Debusine lane: `wait-debusine-check <lane> <tag>` (no `sync-pr-hook`:
-     `debusine-pr-hook.yml` does not reference `qli-ci` at all, so there is
-     nothing to patch)
+     reset already ref-patched `debusine-pr-hook.yml` on `qcom/debian/latest`,
+     and promotion PRs branch off it)
    - `merge-pr <lane> <tag>`
    - `release-tag <lane> <tag>` — Debusine lane also dispatches
      `debusine-release.yml` here (see Debusine Lane Check Contract below)
@@ -233,17 +237,77 @@ needs its own validation. `release=false` because the real release already
 happened via the preceding `pkg-release.yml` dispatch; this step only
 validates the wiring.
 
+## Debusine Fork PR Check
+
+`promote-tag`'s promotion PRs are opened by `DEB_PKG_BOT_CI_TOKEN`, which has
+write access to `pkg-example`. GitHub therefore never applies the
+restricted-token/empty-`pull_requests[]` treatment to those PRs -
+`workflow_run.pull_requests[0]` is already populated correctly for them. That
+means the tag loop above validates the hook/check *wiring*, but not the two
+things that only differ for a genuine fork PR:
+
+- PR identity: `debusine-pr-check.yml`'s `resolve-pr` job must find the PR by
+  head `owner:branch`, since `workflow_run.pull_requests` is empty and
+  `listPullRequestsAssociatedWithCommit` does not see fork-only commits.
+- Untrusted code: the trusted check must never check out or execute the PR.
+  The hook builds the source package with the fork's read-only, secret-less
+  token, and the check only takes that artifact as data
+  (`import_source_package` in `debusine.yml`).
+  `actions/checkout` also refuses fork PR checkouts from `workflow_run`, so a
+  regression here fails loudly rather than silently.
+
+A regression in either would pass the tag loop above without being caught.
+
+`fork-pr-check` closes that gap with a real fork PR, run as a standalone job
+(after the debusine lane, without resetting `pkg-example` itself):
+
+1. Clones `pkg-example` and checks that `origin/qcom/debian/latest` exists. It
+   does not reset anything: it runs against the branch as the debusine lane
+   (or, with that lane disabled, the last run that reset it) left it, which
+   also makes it cheap to iterate on with every other lane disabled.
+2. Branches off `qcom/debian/latest`, appends a run-unique comment line to
+   `debian/copyright` (a PR needs a diff and each run a fresh head SHA; the
+   change must stay inside `debian/`, since anything outside it is an
+   unrecorded upstream change for a `3.0 (quilt)` package and `dpkg-source`
+   refuses to build), commits it, and pushes to a dedicated fork (`DEB_PKG_FORK_BOT_CI_USER`/`DEB_PKG_FORK_BOT_CI_REPO_NAME`)
+   owned by an account with **no write access** to `pkg-example` - that lack of
+   write access is what makes GitHub treat the resulting PR as a genuine fork PR
+   (restricted token, no secrets on the hook, empty `pull_requests[]` on the
+   reacting check).
+3. Opens the PR from `<fork-bot>:<branch>` to
+   `qualcomm-linux/pkg-example:qcom/debian/latest`, authenticated as the fork
+   bot (`DEB_PKG_FORK_BOT_CI_TOKEN`).
+4. Waits for the `Debusine CI` commit status on the fork PR's head SHA
+   (`wait_for_debusine_check`, same polling logic as the tag loop's check).
+5. Closes the PR without merging (disposable smoke check, not a real
+   promotion) and deletes the throwaway branch on the fork.
+
+Result is recorded in the fork-pr-check job's state file, separate from the
+debusine lane's tag loop results, so a failure here is attributable specifically
+to the fork-PR path.
+
+**Invariant that must hold forever for this test to mean anything**: the
+fork-bot account must never be granted write access to `pkg-example`. If it
+ever were (e.g. added as a collaborator), its PRs would stop getting the
+restricted treatment and this check would silently stop testing what it
+claims to.
+
 ## State Model
 
-Primary state file (path varies per lane; debusine and prebuilt promote lanes
-use their own dedicated files, debian/ubuntu share
-`/tmp/pkg-example-e2e-state.json`):
+Primary state file (path varies per job; each job uses its own dedicated file):
 
-It tracks:
+- Debusine lane: `/tmp/pkg-example-e2e-debusine-state.json`
+- Fork PR check: `/tmp/pkg-example-e2e-fork-pr-check-state.json`
+- Prebuilt promote lane: `/tmp/pkg-example-e2e-prebuilt-state.json`
+- Debian/Ubuntu lanes: `/tmp/pkg-example-e2e-state.json` (shared)
+
+Each state file tracks:
 
 - metadata (`qli_ci_ref`, promote mode, path toggles, `prepared`, local
   `repo_dir`, overall failure flags)
 - lane-level phases (`reset`, `seed`) for `debusine`, `debian`, `ubuntu`
+- fork-pr-check lane: `fork_pr_check` phase only (see Debusine Fork PR Check
+  above)
 - tag-level phases (`promote`, `sync`, `prbuild`, `merge`, `release`)
 - promotion PR metadata (`number`, URL, head branch, head SHA)
 
@@ -251,11 +315,12 @@ It tracks:
 `prbuild` holds the Debusine CI check result there instead of a PR-build run
 result (see Debusine Lane Check Contract above).
 
-Summary output path matches the state file's lane (e.g.
-`/tmp/pkg-example-e2e-summary.md` for debian/ubuntu).
+Summary output path matches the state file's job (e.g.
+`/tmp/pkg-example-e2e-fork-pr-check-summary.md` for fork-pr-check job).
 
 Rendered as a table with lane/tag rows. `reset` and `seed` are displayed on the
-first tag row per lane and as `n/a` on subsequent tag rows.
+first tag row per lane and as `n/a` on subsequent tag rows. Fork PR check
+result is displayed as a separate line.
 
 ## Credentials and Access Contracts
 
@@ -274,6 +339,17 @@ Used for:
 
 No silent fallback is expected for this token.
 
+Required for the fork-pr-check job only:
+
+- `DEB_PKG_FORK_BOT_CI_TOKEN` (secret) - PAT for the dedicated fork-bot
+  account
+- `DEB_PKG_FORK_BOT_CI_USER` (repo variable) - fork-bot account login
+- `DEB_PKG_FORK_BOT_CI_REPO_NAME` (repo variable) - name of that account's
+  fork of `pkg-example`
+
+The fork-bot account must have **no write access** to `pkg-example` - see the
+invariant in Debusine Fork PR Check above.
+
 ## Downstream PR-Build Dedupe Contract
 
 `sync-pr-hook` (debian/ubuntu lanes only) can push a commit to the promotion
@@ -288,8 +364,9 @@ To avoid stale duplicate PR Build runs:
 - e2e waits for PR Build using the exact expected PR head SHA.
 - if multiple matching runs exist, the latest by `createdAt` is selected.
 
-The debusine lane has no equivalent step: `debusine-pr-hook.yml` never
-references `qli-ci`, so there is nothing to re-patch and re-push.
+The debusine lane has no equivalent step: reset already ref-patches
+`debusine-pr-hook.yml` on `qcom/debian/latest`, and promotion PRs branch off
+it, so there is nothing to re-patch and re-push.
 
 ## Release Approval Gates
 
@@ -326,10 +403,10 @@ summaries are preserved.
 
 When validating architecture vs implementation, verify:
 
-1. Topology: global slot -> debusine lane -> prebuilt promote lane -> Debian
-   lane -> Ubuntu lane.
+1. Topology: global slot -> debusine lane -> fork PR check ->
+   prebuilt promote lane -> Debian lane -> Ubuntu lane.
 2. Job-level lane gates use
-   `DISABLE_DEBUSINE_PATH`/`DISABLE_PREBUILT_PATH`/`DISABLE_DEBIAN_PATH`/`DISABLE_UBUNTU_PATH`,
+   `DISABLE_DEBUSINE_PATH`/`DISABLE_FORK_PR_PATH`/`DISABLE_PREBUILT_PATH`/`DISABLE_DEBIAN_PATH`/`DISABLE_UBUNTU_PATH`,
    each defaulting to enabled (`'false'`) when unset.
 3. Loop phase order matches this document.
 4. Shared state artifact handoff still exists for Debian -> Ubuntu.
@@ -347,6 +424,13 @@ When validating architecture vs implementation, verify:
     not a dispatched run.
 12. Release wait still handles pending deployment approvals.
 13. `DEB_PKG_BOT_CI_TOKEN` remains a required contract.
-14. Post steps still run on `always()` for summary/comment/cleanup.
+14. Fork PR check job runs after the debusine lane and before the prebuilt
+    promote lane, so no reset can race it.
+15. Fork PR check requires only `prepare-repo` (no reset); checks that
+    `qcom/debian/latest` exists.
+16. Post steps still run on `always()` for summary/comment/cleanup.
+17. The `DEB_PKG_FORK_BOT_CI_USER` account still has no write access to
+    `pkg-example` - if it does, `fork-pr-check` silently stops exercising a
+    real fork PR.
 
 If any item changes intentionally, update this document in the same PR.

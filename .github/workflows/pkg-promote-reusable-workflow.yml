@@ -85,10 +85,10 @@ jobs:
       # The plain "-1" revision is reserved for packages that are headed to
       # Debian itself (branches under "debian/"). Every other packaging branch
       # is a Qualcomm derivative and must carry a vendor suffix, mirroring the
-      # branch -> identifier mapping implemented in debusine-action
-      # (.github/workflows/debusine.yml). A brand new upstream release then
-      # gets a "-0<identifier>1" revision, analogous to Debian's "-0ubuntu1"
-      # scheme for Ubuntu packages that are not (yet) in Debian:
+      # branch -> identifier mapping implemented in the Debusine reusable
+      # workflow (.github/workflows/debusine.yml). A brand new upstream
+      # release then gets a "-0<identifier>1" revision, analogous to Debian's
+      # "-0ubuntu1" scheme for Ubuntu packages that are not (yet) in Debian:
       #
       #   debian/*       -> <version>-1              (bound for Debian)
       #   qli/*, qcom/*  -> <version>-0qli1

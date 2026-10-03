@@ -54,9 +54,6 @@ permissions:
   contents: read
   packages: read
 
-env:
-  DEBUSINE_ACTION_REF: main
-
 jobs:
   prepare-release-source:
     name: Prepare Release Source
@@ -232,7 +229,7 @@ jobs:
             # A promoted or dev-bump changelog entry carries a trailing '~' so
             # its version sorts below the eventual official release. Drop it
             # here so the release itself is the un-suffixed version, mirroring
-            # the Debian path in debusine-action/lib/prepare-release.
+            # the Debian path in qli-ci/lib/prepare-release.
             if [[ "${version}" == *~ ]]; then
               release_version="${version%\~}"
               echo "Stripping '~' suffix for release: ${version} -> ${release_version}"
@@ -355,12 +352,13 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - name: Checkout debusine-action helpers
+      - name: Checkout qli-ci helpers
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: qualcomm-linux/debusine-action
-          ref: ${{ env.DEBUSINE_ACTION_REF }}
-          path: debusine-action
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          token: ${{ secrets.PAT }}
+          path: qli-ci
           fetch-depth: 1
           sparse-checkout: |
             lib
@@ -375,7 +373,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           # Needed by the later "Push release git state" step, which pushes
-          # via debusine-action/lib/push-release without re-authenticating.
+          # via qli-ci/lib/push-release without re-authenticating.
           persist-credentials: true
 
       - name: Download release bundle
@@ -405,13 +403,13 @@ jobs:
         run: |
           set -euxo pipefail
 
-          debusine-action/lib/release
+          qli-ci/lib/release
 
       - name: Push release git state
         run: |
           set -euxo pipefail
 
-          debusine-action/lib/push-release
+          qli-ci/lib/push-release
 
   ubuntu-release:
     name: Release (Ubuntu)

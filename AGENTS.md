@@ -91,7 +91,12 @@ transient branch (for example `debian/pr/*`), routing can fall back to
 ## Important Workflows
 
 - `.github/workflows/pkg-build-reusable-workflow.yml`
-  - main hybrid package build/test entrypoint for package repos
+  - main hybrid package build/test entrypoint for package repos; with
+    `import-pr-build` it is the trusted half of PR Build
+- `.github/workflows/pkg-pr-build-hook-reusable-workflow.yml`
+  - untrusted half of PR Build, called from the `pkg-pr-hook.yml`
+    `pull_request` stub: builds the PR head (Debian: source package;
+    Ubuntu: local pkg-builder build) with no secrets and uploads it
 - `.github/workflows/pkg-release-reusable-workflow.yml`
   - hybrid release entrypoint (Debian via Debusine, Ubuntu via pkg-builder)
 - `.github/workflows/pkg-promote-reusable-workflow.yml`
@@ -108,6 +113,34 @@ transient branch (for example `debian/pr/*`), routing can fall back to
     stub: generates the source package from the PR head and uploads it
 - `pkg-workflows/debusine/*`
   - source Debusine stub workflows copied into managed `pkg-*` repos
+- `pkg-workflows/debian/pkg-pr-hook.yml` (packaging branches) and
+  `pkg-workflows/qli-ci/pkg-pr-build-check.yml` (default branch)
+  - PR Build hook/check pair, synced by `workflows_sync.yml`
+
+## PR Build Hook/Check Split
+
+PR Build follows the same untrusted/trusted split as Debusine PR CI:
+
+- `pkg-pr-hook.yml` ("PR Build Hook", `pull_request`) calls
+  `pkg-pr-build-hook-reusable-workflow.yml`, which declares no secrets.
+  It resolves family/suite from `github.base_ref` only and builds
+  `pull_request.head.sha`: a `source-package-0` artifact for Debian suites, a
+  `docker-build-area` artifact for Ubuntu codenames.
+- `pkg-pr-build-check.yml` ("PR Build Check", `workflow_run`, default branch)
+  resolves the PR from `workflow_run.head_sha` the same way
+  `debusine-pr-check.yml` does, copies the hook artifact into its own run
+  (`untrusted-source-package-0` / `untrusted-docker-build-area`), and calls
+  `pkg-build-reusable-workflow.yml` with `import-pr-build: true`. It owns the
+  `PR Build` commit status.
+- With `import-pr-build`, `pkg-build-reusable-workflow.yml` never checks out
+  `debian-ref` (only uses it for suite routing), validates the Debian artifact
+  with `lib/import-source-package` before submitting it to Debusine, and
+  validates the Ubuntu build archive as a flat list of checksummed files. It
+  refuses `release`, and requires `DEBUSINE_TOKEN` for Debian rather than
+  falling back to a local build.
+- There is no post-merge PR build; release builds rebuild the branch.
+- Keep the hook reusable secret-free. Anything that needs a secret belongs on
+  the trusted side and must only consume the artifact as data.
 
 ## Important Debian/Debusine Helper Entrypoints
 
@@ -156,7 +189,8 @@ Design decisions to preserve:
 - Keep the `resolve` suite map in sync with the `check-branches` candidates in
   `pkg-workflows/debusine/debusine-daily.yml` and in
   `debusine-source-package.yml`.
-- Never check out or execute PR code in a trusted (`workflow_run`) context.
+- Never check out or execute PR code in a trusted (`workflow_run`) context
+  (this also applies to the PR Build pair, see above).
   PR CI builds the source package in the untrusted `pull_request` hook via
   `debusine-source-package.yml`; `debusine-pr-check.yml` copies that artifact
   into its own run and calls `debusine.yml` with `import_source_package: true`,
@@ -189,10 +223,10 @@ fully disposable sandbox: every lane rebuilds its default branch and
 `qcom/debian/latest` from scratch from this repo's own `pkg-workflows/*`
 templates and `tests/pkg-example/*` fixtures, and never depends on anything
 committed in `pkg-example`. Lanes run in order: debusine, fork PR check,
-prebuilt promote, Debian, Ubuntu. The fork-pr-check job
-exercises a real fork PR (via a dedicated write-access-less bot account) to
-validate `debusine-pr-check.yml`'s fork-PR identity resolution, not just its
-wiring.
+prebuilt promote, Debian, Ubuntu. The fork-pr-check job and the
+Ubuntu lane's final step each open a real fork PR (via a dedicated
+write-access-less bot account) to validate `debusine-pr-check.yml`'s and
+`pkg-pr-build-check.yml`'s fork-PR handling, not just their wiring.
 
 Source of truth for test architecture:
 
@@ -206,8 +240,6 @@ Core implementation entrypoints:
 - `tests/pkg-example/pkg_example_e2e_loop.sh`
 - `tests/pkg-example/debian/` (Debian packaging metadata fixture, seeded onto
   `qcom/debian/latest` on every reset)
-- `tests/pkg-example/pkg-pr-build-check.yml` (pkg-example-specific default
-  branch fixture)
 
 Keep architecture details, invariants, and drift-check rules in
 `tests/pkg-example/TESTS.instructions.md` and update that document in the same PR whenever

@@ -1,9 +1,15 @@
-name: PR Build
+name: PR Build Hook
+
+# Untrusted half of PR Build: builds the PR head with no secrets (fork PRs
+# get a read-only token and no secrets regardless of the permissions declared
+# below, so it must not need any). The trusted half, pkg-pr-build-check.yml on
+# the default branch, reacts to this run via workflow_run, takes its artifact
+# as data, and posts the "PR Build" commit status.
 
 on:
   pull_request:
     branches: [ debian/*, qcom/** ]
-    types: [ opened, synchronize, reopened, closed ]
+    types: [ opened, synchronize, reopened ]
 
 concurrency:
   group: pr-build-${{ github.event.pull_request.number || github.ref }}
@@ -16,15 +22,6 @@ permissions:
 jobs:
   build:
     name: PR Build
-    if: ${{ github.event.action != 'closed' || github.event.pull_request.merged == true }}
-    uses: qualcomm-linux/qli-ci/.github/workflows/pkg-build-reusable-workflow.yml@main
+    uses: qualcomm-linux/qli-ci/.github/workflows/pkg-pr-build-hook-reusable-workflow.yml@main
     with:
       qli-ci-ref: main
-      # PRE-MERGE: use the PR head branch (github.head_ref)
-      # POST-MERGE: use the base branch name from the PR
-      debian-ref: ${{ (github.event.action == 'closed' && github.event.pull_request.merged) && github.event.pull_request.base.ref || github.head_ref }}
-      debusine-parent-workspace: ${{ vars.DEBUSINE_PARENT_WORKSPACE }}
-    secrets:
-      DEBUSINE_USER: ${{ secrets.DEBUSINE_USER }}
-      DEBUSINE_TOKEN: ${{ secrets.DEBUSINE_TOKEN }}
-      DEB_PKG_BOT_CI_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}

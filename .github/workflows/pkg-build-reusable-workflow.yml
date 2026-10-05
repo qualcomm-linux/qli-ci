@@ -67,6 +67,16 @@ on:
         type: boolean
         default: false
 
+      import-pr-build:
+        description: |
+          Take the PR build as data only instead of checking out debian-ref:
+          the untrusted-source-package-0 (Debian) or untrusted-docker-build-area
+          (Ubuntu) artifact the caller (pkg-pr-build-check.yml) already placed
+          in this run. debian-ref is then only used to resolve the suite.
+          Cannot be combined with release.
+        type: boolean
+        default: false
+
     secrets:
       DEBUSINE_USER:
         required: false
@@ -111,6 +121,12 @@ jobs:
       force_docker_build: ${{ steps.resolve.outputs.force_docker_build }}
       suite: ${{ steps.resolve.outputs.suite }}
     steps:
+      - name: Refuse release from an imported PR build
+        if: ${{ inputs.import-pr-build && inputs.release }}
+        run: |
+          echo "release cannot be combined with import-pr-build" >&2
+          exit 1
+
       - name: Checkout qli-ci scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -128,6 +144,7 @@ jobs:
           BASE_REF_INPUT: ${{ github.base_ref }}
           DEBUSINE_TOKEN: ${{ secrets.DEBUSINE_TOKEN }}
           FORCE_DOCKER_BUILD: ${{ inputs.force-docker-build }}
+          IMPORT_PR_BUILD: ${{ inputs.import-pr-build }}
         run: |
           set -euo pipefail
 
@@ -186,7 +203,14 @@ jobs:
           fi
 
           force_docker_build=false
-          if [[ "$family" == "debian" ]] && [[ -z "$DEBUSINE_TOKEN" || "$FORCE_DOCKER_BUILD" == "true" ]]; then
+          if [[ "$IMPORT_PR_BUILD" == "true" ]]; then
+            # The PR was already built by the untrusted hook in the form this
+            # family expects; there is nothing to fall back to.
+            if [[ "$family" == "debian" && -z "$DEBUSINE_TOKEN" ]]; then
+              echo "::error::DEBUSINE_TOKEN is required to build an imported Debian source package."
+              exit 1
+            fi
+          elif [[ "$family" == "debian" ]] && [[ -z "$DEBUSINE_TOKEN" || "$FORCE_DOCKER_BUILD" == "true" ]]; then
             force_docker_build=true
             if [[ -z "$DEBUSINE_TOKEN" ]]; then
               echo "::warning::DEBUSINE_TOKEN is not set or not accessible (fork PR secrets are unavailable to workflows triggered by external contributors) — falling back to local pkg-builder for suite '$suite'"
@@ -203,7 +227,7 @@ jobs:
 
   docker-build:
     name: Build (Docker)
-    if: ${{ needs.resolve.outputs.family == 'ubuntu' || needs.resolve.outputs.force_docker_build == 'true' }}
+    if: ${{ !inputs.import-pr-build && (needs.resolve.outputs.family == 'ubuntu' || needs.resolve.outputs.force_docker_build == 'true') }}
     needs: resolve
     runs-on: ubuntu-24.04-arm
     outputs:
@@ -294,8 +318,8 @@ jobs:
     outputs:
       workspace: ${{ steps.prepare-debusine.outputs.workspace }}
       workspace_url: ${{ steps.prepare-debusine.outputs.workspace_url }}
-      srcpkg_name: ${{ steps.generate-source-package.outputs.srcpkg_name }}
-      srcpkg_version: ${{ steps.generate-source-package.outputs.srcpkg_version }}
+      srcpkg_name: ${{ steps.generate-source-package.outputs.srcpkg_name || steps.import-source-package.outputs.srcpkg_name }}
+      srcpkg_version: ${{ steps.generate-source-package.outputs.srcpkg_version || steps.import-source-package.outputs.srcpkg_version }}
     defaults:
       run:
         shell: bash
@@ -313,6 +337,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout Repository
+        if: ${{ !inputs.import-pr-build }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.debian-ref }}
@@ -336,12 +361,27 @@ jobs:
 
       - name: Generate source package
         id: generate-source-package
+        if: ${{ !inputs.import-pr-build }}
         env:
           SUITE_INPUT: ${{ needs.resolve.outputs.suite }}
           DEBUSINE_ASSEMBLE_ORIG: ${{ inputs.assemble-orig }}
         run: |
           set -ex
           SUITE="$SUITE_INPUT" qli-ci/lib/generate-source-package
+
+      - name: Download untrusted source package
+        if: ${{ inputs.import-pr-build }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: untrusted-source-package-0
+          path: untrusted-source-package
+
+      - name: Validate untrusted source package
+        id: import-source-package
+        if: ${{ inputs.import-pr-build }}
+        run: |
+          set -ex
+          qli-ci/lib/import-source-package untrusted-source-package
 
       - name: Build in Debusine
         id: prepare-debusine
@@ -403,7 +443,7 @@ jobs:
               needs.resolve.outputs.family == 'ubuntu' ||
               needs.resolve.outputs.force_docker_build == 'true'
             ) &&
-            needs.docker-build.result == 'success'
+            (needs.docker-build.result == 'success' || (inputs.import-pr-build && needs.resolve.result == 'success'))
           )
         )
       }}
@@ -452,7 +492,7 @@ jobs:
           persist-credentials: false
 
       - name: Checkout Repository
-        if: ${{ needs.resolve.outputs.family == 'debian' && needs.resolve.outputs.force_docker_build != 'true' }}
+        if: ${{ !inputs.import-pr-build && needs.resolve.outputs.family == 'debian' && needs.resolve.outputs.force_docker_build != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.debian-ref }}
@@ -526,7 +566,7 @@ jobs:
         if: ${{ needs.resolve.outputs.family == 'ubuntu' || needs.resolve.outputs.force_docker_build == 'true' }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: docker-build-area
+          name: ${{ inputs.import-pr-build && 'untrusted-docker-build-area' || 'docker-build-area' }}
           path: .
 
       - name: Extract Docker build artifacts
@@ -534,7 +574,63 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p build-area
-          tar -C build-area -xzf docker-build-area.tgz
+          # With import-pr-build this archive comes from an untrusted PR run:
+          # only accept a flat list of uniquely named plain files (and the
+          # build log symlink, dropped below) before extracting it as data.
+          if tar -tvzf docker-build-area.tgz | awk '
+              { type = substr($1, 1, 1); name = $6 }
+              type == "d" && name == "./" && NF == 6 { next }
+              seen[name]++ { bad = 1; next }
+              name !~ /^\.\/[A-Za-z0-9][A-Za-z0-9.+~_:-]*$/ { bad = 1; next }
+              type == "-" && NF == 6 { next }
+              type == "l" && NF == 8 && $7 == "->" { next }
+              { bad = 1 }
+              END { exit !bad }'; then
+            echo "Build area archive must contain only top-level files" >&2
+            exit 1
+          fi
+          tar -C build-area -xzf docker-build-area.tgz --no-same-owner --no-same-permissions
+          find build-area -mindepth 1 -type l -delete
+
+      - name: Collect imported build metadata
+        id: imported-metadata
+        if: ${{ inputs.import-pr-build && needs.resolve.outputs.family == 'ubuntu' }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          changes=( build-area/*.changes )
+          if [ "${#changes[@]}" -ne 1 ]; then
+            echo "Expected exactly one .changes in the build area, found ${#changes[@]}" >&2
+            exit 1
+          fi
+          srcpkg_name=$(sed -n 's/^Source: *//p' "${changes[0]}" | head -n 1)
+          srcpkg_version=$(sed -n 's/^Version: *//p' "${changes[0]}" | head -n 1)
+          if ! [[ "$srcpkg_name" =~ ^[a-z0-9][a-z0-9.+-]+$ ]]; then
+            echo "Invalid Source in .changes" >&2
+            exit 1
+          fi
+          if ! [[ "$srcpkg_version" =~ ^[A-Za-z0-9.+~:-]+$ ]]; then
+            echo "Invalid Version in .changes" >&2
+            exit 1
+          fi
+          (
+            cd build-area
+            awk '/^Checksums-Sha256:/ { in_sums = 1; next }
+                 in_sums && /^ / && NF == 3 { print $1 "  " $3; next }
+                 in_sums { exit }' "$(basename "${changes[0]}")" \
+              | sha256sum --strict -c --quiet -
+          )
+          echo "srcpkg_name=$srcpkg_name" >> "$GITHUB_OUTPUT"
+          echo "srcpkg_version=$srcpkg_version" >> "$GITHUB_OUTPUT"
+
+      - name: Upload validated build area
+        if: ${{ inputs.import-pr-build && needs.resolve.outputs.family == 'ubuntu' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: validated-build-area
+          path: build-area/*.deb
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Validate installability from Docker build artifacts
         # Temporarily disabled while dependency repository injection is unresolved.
@@ -591,8 +687,8 @@ jobs:
           NEEDS_DEBIAN_BUILD_OUTPUTS_WORKSPACE_URL: ${{ needs.debian-build.outputs.workspace_url }}
           NEEDS_DEBIAN_BUILD_OUTPUTS_SRCPKG_NAME: ${{ needs.debian-build.outputs.srcpkg_name }}
           NEEDS_DEBIAN_BUILD_OUTPUTS_SRCPKG_VERSION: ${{ needs.debian-build.outputs.srcpkg_version }}
-          NEEDS_DOCKER_BUILD_OUTPUTS_SRCPKG_NAME: ${{ needs.docker-build.outputs.srcpkg_name }}
-          NEEDS_DOCKER_BUILD_OUTPUTS_SRCPKG_VERSION: ${{ needs.docker-build.outputs.srcpkg_version }}
+          NEEDS_DOCKER_BUILD_OUTPUTS_SRCPKG_NAME: ${{ needs.docker-build.outputs.srcpkg_name || steps.imported-metadata.outputs.srcpkg_name }}
+          NEEDS_DOCKER_BUILD_OUTPUTS_SRCPKG_VERSION: ${{ needs.docker-build.outputs.srcpkg_version || steps.imported-metadata.outputs.srcpkg_version }}
         run: |
           if [[ "${NEEDS_RESOLVE_OUTPUTS_FAMILY}" == "debian" && "${NEEDS_RESOLVE_OUTPUTS_FORCE_DOCKER_BUILD}" != "true" ]]; then
             echo "workspace=${NEEDS_DEBIAN_BUILD_OUTPUTS_WORKSPACE}" >> "$GITHUB_OUTPUT"
@@ -623,14 +719,12 @@ jobs:
       ${{
         always() &&
         vars.AXIOM_ENABLE == 'true' &&
-        github.event_name == 'pull_request' &&
+        inputs.import-pr-build &&
         needs.resolve.outputs.family == 'ubuntu' &&
-        needs.docker-build.result == 'success' &&
         needs.test.result == 'success'
       }}
     needs:
       - resolve
-      - docker-build
       - test
     runs-on: lecore-prd-u2404-arm64-xlrg-od-ephem
     defaults:
@@ -638,17 +732,11 @@ jobs:
         shell: bash
     steps:
 
-      - name: Download Docker build artifacts
+      - name: Download validated build area
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: docker-build-area
-          path: .
-
-      - name: Extract Docker build artifacts
-        run: |
-          set -euxo pipefail
-          mkdir -p build-area
-          tar -C build-area -xzf docker-build-area.tgz
+          name: validated-build-area
+          path: build-area
 
       - name: Generate metadata.json
         env:

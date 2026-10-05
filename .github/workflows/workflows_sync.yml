@@ -310,6 +310,15 @@ jobs:
               isDirty=true
             fi
 
+            # pkg-pr-hook.yml only belongs on packaging branches (the PR
+            # targets). On the default branch it is superseded by the
+            # workflow_run-triggered pkg-pr-build-check.yml synced below.
+            if [[ -f "$DEBIAN_TARGET_WORKFLOW_FILE" ]]; then
+              echo "    🗑️ Removing default-branch $(basename "$DEBIAN_TARGET_WORKFLOW_FILE"), superseded by pkg-pr-build-check.yml"
+              rm "$DEBIAN_TARGET_WORKFLOW_FILE"
+              isDirty=true
+            fi
+
             # Compare and sync workflow files
             for workflow in ../qli-ci/pkg-workflows/qli-ci/*.yml; do
               workflow_name=$(basename "$workflow")

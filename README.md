@@ -17,6 +17,7 @@ workflow templates for Qualcomm Linux `pkg-*` repositories.
 ## Primary Reusable Workflows
 
 - `pkg-build-reusable-workflow.yml`
+- `pkg-pr-build-hook-reusable-workflow.yml`
 - `pkg-promote-reusable-workflow.yml`
 - `pkg-promote-prebuilt-reusable-workflow.yml`
 - `pkg-release-reusable-workflow.yml`

@@ -1,0 +1,204 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# Untrusted half of PR Build: build the PR head and upload the result as an
+# artifact. Called from the pkg-pr-hook.yml pull_request workflow, which for
+# fork PRs runs with a read-only token and no secrets. Nothing here may need a
+# secret or write anything; the trusted workflow_run side
+# (pkg-pr-build-check.yml, then pkg-build-reusable-workflow.yml with
+# import-pr-build) takes the artifact as data only.
+#
+# Debian suites produce a source package (source-package-0) that the trusted
+# side submits to Debusine. Ubuntu codenames build locally with pkg-builder
+# and upload the build area (docker-build-area).
+
+name: PR Build Hook Reusable Workflow
+
+on:
+  workflow_call:
+    inputs:
+      qli-ci-ref:
+        description: Ref of qualcomm-linux/qli-ci to check out for helper scripts
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  resolve:
+    name: Resolve branch target
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      family: ${{ steps.resolve.outputs.family }}
+      suite: ${{ steps.resolve.outputs.suite }}
+    steps:
+      - name: Checkout qli-ci scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          path: qli-ci
+          sparse-checkout: |
+            scripts
+          persist-credentials: false
+
+      - name: Resolve family and suite from the PR base branch
+        id: resolve
+        shell: bash
+        env:
+          # Always the base branch: the head branch name is chosen by the PR
+          # author and, for fork PRs, does not exist in this repository.
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          resolved_kv="$(qli-ci/scripts/resolve_branch_family_suite.sh "$BASE_REF")" || {
+            echo "::error::Unable to resolve build target from PR base branch '$BASE_REF'. Expected a branch ending in '/<family>/<suite>'."
+            exit 1
+          }
+
+          family=""
+          suite=""
+          while IFS='=' read -r key value; do
+            case "$key" in
+              family) family="$value" ;;
+              suite) suite="$value" ;;
+            esac
+          done <<< "$resolved_kv"
+
+          # Preserve Debian aliases used in branch names.
+          if [[ "$family" == "debian" ]] && [[ "$suite" == "latest" || "$suite" == "unstable" ]]; then
+            suite=sid
+          fi
+
+          echo "::notice title=Resolved build target::base-ref='${BASE_REF}', family='${family}', suite='${suite}'"
+          echo "family=$family" >> "$GITHUB_OUTPUT"
+          echo "suite=$suite" >> "$GITHUB_OUTPUT"
+
+  source-package:
+    name: Prepare source package
+    needs: resolve
+    if: ${{ needs.resolve.outputs.family == 'debian' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/qualcomm-linux/debusine-pkg-builder:${{ needs.resolve.outputs.suite }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: srcpkg
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          # Keep credentials: qli-ci/lib/generate-source-package fetches
+          # pristine-tar and upstream tag refs from origin afterward. The token
+          # is this run's own read-only one (no secrets in fork PR runs), and
+          # srcpkg/ is never uploaded as an artifact.
+          persist-credentials: true
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          path: qli-ci
+          sparse-checkout: |
+            lib
+          persist-credentials: false
+
+      - id: generate-source-package
+        name: Generate source package
+        env:
+          SUITE_INPUT: ${{ needs.resolve.outputs.suite }}
+        run: |
+          set -ex
+          SUITE="$SUITE_INPUT" qli-ci/lib/generate-source-package
+
+      - name: Stage source package files
+        env:
+          CHANGES_PATH: ${{ steps.generate-source-package.outputs.changes_path }}
+        run: |
+          set -eux
+          mkdir source-package
+          dcmd cp "$CHANGES_PATH" source-package/
+
+      - name: Upload source package files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: source-package-0
+          path: source-package
+          if-no-files-found: error
+          retention-days: 3
+
+  docker-build:
+    name: Build (Docker)
+    needs: resolve
+    if: ${{ needs.resolve.outputs.family == 'ubuntu' }}
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        shell: bash
+    container:
+      image: ghcr.io/qualcomm-linux/pkg-builder:${{ needs.resolve.outputs.suite }}
+      options: --privileged
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout qli-ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          path: qli-ci
+          fetch-depth: 1
+          sparse-checkout: |
+            .github
+            scripts
+          persist-credentials: false
+
+      - name: Checkout PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: package-repo
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Build Debian Packages
+        # Deliberately not using $/ here: it would resolve against the ref
+        # this workflow itself was invoked at, instead of the qli-ci
+        # checkout at inputs.qli-ci-ref, breaking that decoupling.
+        uses: ./qli-ci/.github/actions/build_package # zizmor: ignore[self-repository]
+        with:
+          suite: ${{ needs.resolve.outputs.suite }}
+          pkg-dir: package-repo
+          build-dir: build-area
+          run-lintian: true
+
+      - name: Archive build area
+        run: |
+          set -euxo pipefail
+          tar -C build-area -czf docker-build-area.tgz .
+
+      - name: Upload build area
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docker-build-area
+          path: docker-build-area.tgz
+          if-no-files-found: error
+          retention-days: 3

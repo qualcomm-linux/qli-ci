@@ -143,9 +143,10 @@ retargeted.
 `reset-lane <lane>` performs, in order:
 
 1. Rebuild `pkg-example`'s default branch from scratch as a fresh orphan
-   commit, force-pushed. Content comes from this qli-ci checkout: the five
+   commit, force-pushed. Content comes from this qli-ci checkout: the
    `pkg-workflows/qli-ci/` caller workflows, including the `workflow_run`
-   `pkg-pr-build-check.yml` (ref-patched to the ref under test), and the full
+   `pkg-pr-build-check.yml` and the default-branch copy of `pkg-pr-hook.yml`
+   (all ref-patched to the ref under test), and the full
    Debusine default-branch set (`debusine-daily.yml`,
    `debusine-pr-check.yml`, `debusine-release.yml`, `README.debusine.md`,
    also ref-patched since they call qli-ci's `debusine.yml` reusable
@@ -228,6 +229,12 @@ seeded on the default branch by reset) resolves the PR from the run's head
 SHA, stages the hook's artifact, calls `pkg-build-reusable-workflow.yml` with
 `import-pr-build: true`, and posts the `PR Build` commit status on the PR
 head SHA.
+
+The default branch also carries an identical copy of `pkg-pr-hook.yml`. It
+never triggers there, but GitHub registers a workflow's name from the default
+branch copy and `workflow_run` matches on that registered name. Without it,
+the hook stays registered under whatever name the default branch last had
+(historically `PR Build`), and `pkg-pr-build-check.yml` never fires.
 
 `wait-pr-build` polls `/repos/{repo}/commits/{sha}/status` for the `PR Build`
 context (same polling helper, `wait_for_commit_status`, as
@@ -476,5 +483,9 @@ When validating architecture vs implementation, verify:
     `import-pr-build: true`.
 19. The ubuntu lane still ends with `fork-pr-check ubuntu`, gated on
     `DISABLE_FORK_PR_PATH`.
+20. `pkg-workflows/qli-ci/pkg-pr-hook.yml` and
+    `pkg-workflows/debian/pkg-pr-hook.yml` are still byte-identical, and
+    their `name:` still matches `pkg-pr-build-check.yml`'s
+    `workflow_run.workflows` entry.
 
 If any item changes intentionally, update this document in the same PR.

@@ -1,0 +1,34 @@
+name: PR Build Hook
+
+# Untrusted half of PR Build: builds the PR head with no secrets (fork PRs
+# get a read-only token and no secrets regardless of the permissions declared
+# below, so it must not need any). The trusted half, pkg-pr-build-check.yml on
+# the default branch, reacts to this run via workflow_run, takes its artifact
+# as data, and posts the "PR Build" commit status.
+#
+# An identical copy also lives on the default branch
+# (pkg-workflows/qli-ci/pkg-pr-hook.yml), where its branch filter never
+# matches. It exists only because GitHub registers a workflow's name from
+# the default branch copy of the file, and pkg-pr-build-check.yml's
+# workflow_run trigger matches on that registered name. Without it, the name
+# stays whatever the default branch last had and the check never fires.
+
+on:
+  pull_request:
+    branches: [ debian/*, qcom/**, qli-staging/** ]
+    types: [ opened, synchronize, reopened ]
+
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build:
+    name: PR Build
+    uses: qualcomm-linux/qli-ci/.github/workflows/pkg-pr-build-hook-reusable-workflow.yml@main
+    with:
+      qli-ci-ref: main

@@ -43,6 +43,7 @@ DEBIAN_SEED_BRANCH="qli-staging/debian/latest"
 DEFAULT_BRANCH_CALLER_FILES=(
   pkg-build.yml
   pkg-pr-build-check.yml
+  pkg-pr-hook.yml
   pkg-promote.yml
   pkg-promote-prebuilt.yml
   pkg-release.yml

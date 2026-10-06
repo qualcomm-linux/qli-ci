@@ -116,6 +116,10 @@ transient branch (for example `debian/pr/*`), routing can fall back to
 - `pkg-workflows/debian/pkg-pr-hook.yml` (packaging branches) and
   `pkg-workflows/qli-ci/pkg-pr-build-check.yml` (default branch)
   - PR Build hook/check pair, synced by `workflows_sync.yml`
+  - `pkg-workflows/qli-ci/pkg-pr-hook.yml` is a byte-identical default-branch
+    copy of the hook. It never triggers there; it keeps GitHub's registered
+    workflow name at "PR Build Hook", which the check's `workflow_run`
+    trigger matches on (GitHub takes the name from the default branch copy)
 
 ## PR Build Hook/Check Split
 

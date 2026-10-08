@@ -272,6 +272,15 @@ jobs:
             echo "No summary was generated." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Upload debusine e2e state
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pkg-example-e2e-debusine-state-${{ github.run_id }}
+          path: ${{ env.STATE_FILE }}
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Cleanup workspace
         if: ${{ always() }}
         continue-on-error: true
@@ -479,6 +488,7 @@ jobs:
       STATE_FILE: /tmp/pkg-example-e2e-state.json
       ENABLE_DEBIAN_PATH: ${{ (vars.DISABLE_DEBIAN_PATH || 'false') == 'true' && '0' || '1' }}
       ENABLE_UBUNTU_PATH: ${{ (vars.DISABLE_UBUNTU_PATH || 'false') == 'true' && '0' || '1' }}
+      ENABLE_DEBUSINE_PATH: ${{ (vars.DISABLE_DEBUSINE_PATH || 'false') == 'true' && '0' || '1' }}
       PROMOTE_MODE: source
 
     steps:
@@ -533,6 +543,7 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
           ENABLE_DEBIAN_PATH: ${{ env.ENABLE_DEBIAN_PATH }}
           ENABLE_UBUNTU_PATH: ${{ env.ENABLE_UBUNTU_PATH }}
+          ENABLE_DEBUSINE_PATH: ${{ env.ENABLE_DEBUSINE_PATH }}
         run: |
           set -euo pipefail
           ./tests/pkg-example/pkg_example_e2e_loop.sh init
@@ -657,6 +668,7 @@ jobs:
       STATE_FILE: /tmp/pkg-example-e2e-state.json
       ENABLE_DEBIAN_PATH: ${{ (vars.DISABLE_DEBIAN_PATH || 'false') == 'true' && '0' || '1' }}
       ENABLE_UBUNTU_PATH: ${{ (vars.DISABLE_UBUNTU_PATH || 'false') == 'true' && '0' || '1' }}
+      ENABLE_DEBUSINE_PATH: ${{ (vars.DISABLE_DEBUSINE_PATH || 'false') == 'true' && '0' || '1' }}
       PROMOTE_MODE: source
 
     steps:
@@ -720,9 +732,29 @@ jobs:
           SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
           ENABLE_DEBIAN_PATH: ${{ env.ENABLE_DEBIAN_PATH }}
           ENABLE_UBUNTU_PATH: ${{ env.ENABLE_UBUNTU_PATH }}
+          ENABLE_DEBUSINE_PATH: ${{ env.ENABLE_DEBUSINE_PATH }}
         run: |
           set -euo pipefail
           ./tests/pkg-example/pkg_example_e2e_loop.sh init
+
+      - name: Download debusine e2e state
+        id: download_debusine_state
+        if: ${{ (vars.DISABLE_DEBUSINE_PATH || 'false') != 'true' }}
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pkg-example-e2e-debusine-state-${{ github.run_id }}
+          path: /tmp/pkg-example-e2e-debusine-state
+
+      - name: Merge debusine results into shared state
+        if: ${{ steps.download_debusine_state.outcome == 'success' }}
+        env:
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./tests/pkg-example/pkg_example_e2e_loop.sh merge-lane-state \
+            /tmp/pkg-example-e2e-debusine-state/pkg-example-e2e-debusine-state.json \
+            debusine
 
       - name: Prepare pkg-example clone
         env:

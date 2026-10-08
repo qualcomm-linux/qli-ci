@@ -82,8 +82,12 @@ Execution is sequential, not parallel:
 
 State handoff:
 
-- Debusine and prebuilt promote lanes are self-contained: each uses its own
-  dedicated state/summary files and nothing downstream consumes them.
+- Debusine and prebuilt promote lanes each use dedicated state/summary files.
+- Debusine uploads its state as artifact
+  `pkg-example-e2e-debusine-state-<run_id>`. The Ubuntu lane merges the
+  Debusine lane results into the shared state before generating the final
+  workflow summary and PR comment.
+- Prebuilt promote state is self-contained and nothing downstream consumes it.
 - Debian uploads `/tmp/pkg-example-e2e-state.json` as artifact
   `pkg-example-e2e-state-<run_id>`.
 - Ubuntu downloads this shared state when Debian succeeded.

@@ -102,9 +102,6 @@ permissions:
   contents: read
   packages: read
 
-env:
-  DEBUSINE_ACTION_REF: main
-
 jobs:
   resolve:
     name: Resolve branch target
@@ -303,12 +300,13 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Checkout debusine-action helpers
+      - name: Checkout qli-ci helpers
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: qualcomm-linux/debusine-action
-          ref: ${{ env.DEBUSINE_ACTION_REF }}
-          path: debusine-action
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          token: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          path: qli-ci
           fetch-depth: 1
           sparse-checkout: |
             lib
@@ -321,7 +319,7 @@ jobs:
           path: srcpkg
           fetch-depth: 0
           fetch-tags: true
-          # Keep credentials: debusine-action/lib/generate-source-package
+          # Keep credentials: qli-ci/lib/generate-source-package
           # fetches pristine-tar and upstream tag refs from origin afterward.
           persist-credentials: true
 
@@ -333,7 +331,7 @@ jobs:
         run: |
           set -ex
           echo "::group::Prepare release"
-          SUITE="$SUITE_INPUT" debusine-action/lib/prepare-release
+          SUITE="$SUITE_INPUT" qli-ci/lib/prepare-release
           echo "::endgroup::"
 
       - name: Generate source package
@@ -343,7 +341,7 @@ jobs:
           DEBUSINE_ASSEMBLE_ORIG: ${{ inputs.assemble-orig }}
         run: |
           set -ex
-          SUITE="$SUITE_INPUT" debusine-action/lib/generate-source-package
+          SUITE="$SUITE_INPUT" qli-ci/lib/generate-source-package
 
       - name: Build in Debusine
         id: prepare-debusine
@@ -359,9 +357,9 @@ jobs:
           SUITE: ${{ needs.resolve.outputs.suite }}
         run: |
           set -euxo pipefail
-          debusine-action/lib/build
+          qli-ci/lib/build
 
-          # debusine-action/lib/build now writes directly to $GITHUB_OUTPUT.
+          # qli-ci/lib/build now writes directly to $GITHUB_OUTPUT.
           # Keep compatibility with older behavior that wrote a local "output" file.
           workspace="$(sed -n 's/^workspace=//p' "$GITHUB_OUTPUT" | tail -n 1 || true)"
           if [[ -z "${workspace}" && -f output ]]; then
@@ -440,13 +438,14 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout debusine-action helpers
+      - name: Checkout qli-ci helpers
         if: ${{ needs.resolve.outputs.family == 'debian' && needs.resolve.outputs.force_docker_build != 'true' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: qualcomm-linux/debusine-action
-          ref: ${{ env.DEBUSINE_ACTION_REF }}
-          path: debusine-action
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          token: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          path: qli-ci
           fetch-depth: 1
           sparse-checkout: |
             lib
@@ -474,7 +473,7 @@ jobs:
         run: |
           set -euxo pipefail
 
-          debusine-action/lib/generate-apt-config
+          qli-ci/lib/generate-apt-config
           install -d /etc/apt/keyrings /etc/apt/sources.list.d /etc/apt/auth.conf.d
           install -m 0644 debusine-ci.sources /etc/apt/sources.list.d/debusine-ci.sources
           install -m 0600 debusine-ci-auth.conf /etc/apt/auth.conf.d/debusine-ci-auth.conf

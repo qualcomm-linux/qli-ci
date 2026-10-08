@@ -1656,6 +1656,40 @@ cmd_write_summary() {
   return 0
 }
 
+cmd_merge_lane_state() {
+  ensure_state
+
+  local source_state="${1:-}"
+  local lane="${2:-}"
+  if [[ -z "$source_state" || ! -f "$source_state" ]]; then
+    echo "Source state file does not exist: $source_state" >&2
+    return 1
+  fi
+  if [[ "$lane" != "debusine" && "$lane" != "debian" && "$lane" != "ubuntu" ]]; then
+    echo "Unsupported lane for state merge: $lane" >&2
+    return 1
+  fi
+
+  local target_ref source_ref tmp
+  target_ref="$(state_get '.meta.qli_ci_ref')"
+  source_ref="$(jq -r '.meta.qli_ci_ref // empty' "$source_state")"
+  if [[ -z "$source_ref" || "$source_ref" != "$target_ref" ]]; then
+    echo "Ref mismatch while merging $lane state: target=$target_ref source=$source_ref" >&2
+    return 1
+  fi
+
+  tmp="$(mktemp)"
+  jq -s --arg lane "$lane" '
+    .[0] as $target
+    | .[1] as $source
+    | $target
+    | .lanes[$lane] = $source.lanes[$lane]
+    | .meta.overall_failure = ($target.meta.overall_failure or $source.meta.overall_failure)
+    | .meta["enable_" + $lane] = $source.meta["enable_" + $lane]
+  ' "$STATE_FILE" "$source_state" > "$tmp"
+  mv "$tmp" "$STATE_FILE"
+}
+
 cmd_cleanup() {
   ensure_state
 
@@ -1698,6 +1732,7 @@ Usage:
   $0 merge-pr <debian|ubuntu|debusine> <tag>
   $0 release-tag <debian|ubuntu|debusine> <tag>
   $0 curate-ubuntu-wip-after-first-release
+  $0 merge-lane-state <source-state-file> <debian|ubuntu|debusine>
   $0 write-summary
   $0 cleanup
   $0 fail-if-needed
@@ -1750,6 +1785,10 @@ main() {
       ;;
     curate-ubuntu-wip-after-first-release)
       cmd_curate_ubuntu_wip_after_first_release
+      ;;
+    merge-lane-state)
+      shift
+      cmd_merge_lane_state "${1:-}" "${2:-}"
       ;;
     write-summary)
       cmd_write_summary

@@ -291,10 +291,133 @@ jobs:
           set -euo pipefail
           ./tests/pkg-example/pkg_example_e2e_loop.sh cleanup
 
+  fork-pr-check:
+    name: pkg-example e2e (fork PR check)
+    needs: [global-lock, debusine-lane]
+    if: ${{ !cancelled() && always() && (vars.DISABLE_FORK_PR_PATH || 'false') != 'true' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.debusine-lane.result) }}
+    runs-on: ubuntu-latest
+    env:
+      SUMMARY_FILE: /tmp/pkg-example-e2e-fork-pr-check-summary.md
+      STATE_FILE: /tmp/pkg-example-e2e-fork-pr-check-state.json
+      ENABLE_DEBIAN_PATH: "0"
+      ENABLE_UBUNTU_PATH: "0"
+      ENABLE_DEBUSINE_PATH: "0"
+
+    steps:
+      - name: Checkout qli-ci
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve run parameters
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_SHA_VALUE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          qli_ci_ref=""
+          qli_ci_pr_number=""
+          is_fork_pr="false"
+
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            qli_ci_ref="$(jq -r '.pull_request.head.sha // empty' "$GITHUB_EVENT_PATH")"
+            qli_ci_pr_number="$(jq -r '.pull_request.number // empty' "$GITHUB_EVENT_PATH")"
+            pr_is_fork="$(jq -r '.pull_request.head.repo.fork // false' "$GITHUB_EVENT_PATH")"
+            if [[ "${pr_is_fork}" == "true" ]]; then
+              is_fork_pr="true"
+            fi
+          elif [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            qli_ci_ref="$(jq -r '.inputs["qli-ci-ref"] // empty' "$GITHUB_EVENT_PATH")"
+            qli_ci_pr_number="$(jq -r '.inputs["qli-ci-pr-number"] // empty' "$GITHUB_EVENT_PATH")"
+          fi
+
+          if [[ -z "${qli_ci_ref}" ]]; then
+            qli_ci_ref="${GITHUB_SHA_VALUE}"
+          fi
+
+          if [[ -z "${qli_ci_ref}" ]]; then
+            echo "Unable to resolve qli-ci ref under test" >&2
+            exit 1
+          fi
+
+          echo "qli_ci_ref=${qli_ci_ref}" >> "$GITHUB_OUTPUT"
+          echo "qli_ci_pr_number=${qli_ci_pr_number}" >> "$GITHUB_OUTPUT"
+          echo "is_fork_pr=${is_fork_pr}" >> "$GITHUB_OUTPUT"
+
+      - name: Initialize e2e state
+        env:
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          QLI_CI_PR_NUMBER: ${{ steps.resolve.outputs.qli_ci_pr_number }}
+          IS_FORK_PR: ${{ steps.resolve.outputs.is_fork_pr }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+          ENABLE_DEBIAN_PATH: ${{ env.ENABLE_DEBIAN_PATH }}
+          ENABLE_UBUNTU_PATH: ${{ env.ENABLE_UBUNTU_PATH }}
+          ENABLE_DEBUSINE_PATH: ${{ env.ENABLE_DEBUSINE_PATH }}
+        run: |
+          set -euo pipefail
+          ./tests/pkg-example/pkg_example_e2e_loop.sh init
+
+      - name: Prepare pkg-example clone
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          QLI_CI_REF: ${{ steps.resolve.outputs.qli_ci_ref }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+          ./tests/pkg-example/pkg_example_e2e_loop.sh prepare-repo
+
+      - name: Fork PR check
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          FORK_BOT_TOKEN: ${{ secrets.DEB_PKG_FORK_BOT_CI_TOKEN }}
+          FORK_BOT_USER: ${{ vars.DEB_PKG_FORK_BOT_CI_USER }}
+          FORK_BOT_REPO_NAME: ${{ vars.DEB_PKG_FORK_BOT_CI_REPO_NAME }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./tests/pkg-example/pkg_example_e2e_loop.sh fork-pr-check
+
+      - name: Build fork PR check summary
+        if: ${{ always() }}
+        env:
+          STATE_FILE: ${{ env.STATE_FILE }}
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+          ./tests/pkg-example/pkg_example_e2e_loop.sh write-summary
+
+      - name: Append fork PR check summary to workflow
+        if: ${{ always() }}
+        env:
+          SUMMARY_FILE: ${{ env.SUMMARY_FILE }}
+        run: |
+          set -euo pipefail
+          if [[ -f "${SUMMARY_FILE}" ]]; then
+            cat "${SUMMARY_FILE}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## pkg-example e2e fork PR check" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            echo "No summary was generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Cleanup workspace
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./tests/pkg-example/pkg_example_e2e_loop.sh cleanup
+
   prebuilt-promote-lane:
     name: pkg-example e2e (prebuilt promote lane)
-    needs: [global-lock, debusine-lane]
-    if: ${{ !cancelled() && always() && (vars.DISABLE_PREBUILT_PATH || 'false') != 'true' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.debusine-lane.result) }}
+    needs: [global-lock, fork-pr-check]
+    if: ${{ !cancelled() && always() && (vars.DISABLE_PREBUILT_PATH || 'false') != 'true' && needs.global-lock.result == 'success' && contains(fromJson('["success","failure","skipped"]'), needs.fork-pr-check.result) }}
     runs-on: ubuntu-latest
     env:
       SUMMARY_FILE: /tmp/pkg-example-e2e-prebuilt-summary.md

@@ -35,6 +35,10 @@ set -eu
 # Outputs:
 #   stdout: the ASCII-armored signing key
 
+# Resolve sibling helpers through an absolute path captured once, so that a
+# later cd cannot break them.
+lib_dir=$(cd "$(dirname "$0")" && pwd)
+
 # Retry every RETRY_INTERVAL seconds until a valid key is returned or MAX_WAIT
 # seconds have elapsed.
 RETRY_INTERVAL=10
@@ -45,7 +49,7 @@ url="https://deb.${DEBUSINE_HOST}/${DEBUSINE_SCOPE}/${DEBUSINE_WORKSPACE}/signin
 waited=0
 while :; do
     if key=$(curl -fsSu "${DEBUSINE_USER}:${DEBUSINE_TOKEN}" "$url") \
-       && printf '%s' "$key" | "$(dirname "$0")"/signing-key-is-valid; then
+       && printf '%s' "$key" | "$lib_dir"/signing-key-is-valid; then
         printf '%s' "$key"
         exit 0
     fi

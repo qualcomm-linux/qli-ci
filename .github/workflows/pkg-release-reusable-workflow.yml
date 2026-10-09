@@ -357,7 +357,6 @@ jobs:
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ inputs.qli-ci-ref }}
-          token: ${{ secrets.PAT }}
           path: qli-ci
           fetch-depth: 1
           sparse-checkout: |

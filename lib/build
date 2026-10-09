@@ -33,6 +33,10 @@ set -o pipefail
 #   signing-key.asc: the build workspace's archive signing key, written to the
 #     current directory after the build completes
 
+# Resolve sibling helpers through an absolute path captured once, so that a
+# later cd cannot break them.
+lib_dir=$(cd "$(dirname "$0")" && pwd)
+
 echo "::group::Build in Debusine"
 
 # WORKAROUND: older production Debusine does not support the suite lookup syntax
@@ -87,7 +91,7 @@ EOF
 workflow_start_output=$(echo "suffix: $child_ci_suffix"|debusine workflow start -w "${parent_workspace}" --yaml create-child-workspace)
 echo "Workflow start output: $workflow_start_output" >&2
 workflow_id=$(echo "$workflow_start_output"|yq -r .id)
-"$(dirname "$0")"/poll_workflow.py "$workflow_id"
+"$lib_dir"/poll_workflow.py "$workflow_id"
 debusine archive suite create \
     --architecture all \
     --architecture amd64 \
@@ -135,12 +139,12 @@ echo "::notice::Debusine work request: https://${DEBUSINE_HOST}/${DEBUSINE_SCOPE
 echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
 echo "workflow_id=$workflow_id" >> "$GITHUB_OUTPUT"
 
-"$(dirname "$0")"/poll_workflow.py "$workflow_id"
+"$lib_dir"/poll_workflow.py "$workflow_id"
 
 # Fetch the build workspace's archive signing key now that the build has
 # completed, retrying past the Debusine empty-key race (see lib/fetch-signing-key).
 # Writing it to a file lets downstream steps reuse it without racing the
 # archive signing-key generation themselves.
-DEBUSINE_WORKSPACE="$workspace" "$(dirname "$0")"/fetch-signing-key > signing-key.asc
+DEBUSINE_WORKSPACE="$workspace" "$lib_dir"/fetch-signing-key > signing-key.asc
 
 echo "::endgroup::"

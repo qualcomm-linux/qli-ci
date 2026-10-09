@@ -29,6 +29,10 @@ set -o pipefail
 
 target_workspace=${DEBUSINE_TARGET_WORKSPACE:-qli-staging}
 
+# Resolve sibling helpers through an absolute path captured once, so that a
+# later cd cannot break them.
+lib_dir=$(cd "$(dirname "$0")" && pwd)
+
 echo "::group::Release to Debusine ${target_workspace}"
 
 mkdir -p ~/.config/debusine/client
@@ -66,6 +70,6 @@ END
 )
 echo "Workflow start output: $workflow_start_output" >&2
 workflow_id=$(echo "$workflow_start_output"|yq -r .id)
-"$(dirname "$0")"/poll_workflow.py "$workflow_id"
+"$lib_dir"/poll_workflow.py "$workflow_id"
 
 echo "::endgroup::"

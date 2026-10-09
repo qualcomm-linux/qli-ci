@@ -19,6 +19,7 @@ pkg-diag-router
 pkg-eva-dkms
 pkg-fastrpc
 pkg-gbm-msm-backend
+pkg-hexagon-dsp-binaries
 pkg-kgsl
 pkg-libdiag
 pkg-mink-idl-compiler

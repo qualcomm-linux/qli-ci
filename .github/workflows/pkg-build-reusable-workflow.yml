@@ -237,6 +237,10 @@ jobs:
         with:
           ref: ${{ inputs.debian-ref }}
           path: package-repo
+          # Full history and tags are required here: build_package runs
+          # gbp buildpackage directly, which builds the orig tarball from the
+          # upstream/<version> tag, and does not fetch it itself. (Unlike the
+          # Debusine path, whose generate-source-package fetches its own refs.)
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
@@ -305,7 +309,6 @@ jobs:
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ inputs.qli-ci-ref }}
-          token: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           path: qli-ci
           fetch-depth: 1
           sparse-checkout: |
@@ -317,10 +320,12 @@ jobs:
         with:
           ref: ${{ inputs.debian-ref }}
           path: srcpkg
-          fetch-depth: 0
-          fetch-tags: true
-          # Keep credentials: qli-ci/lib/generate-source-package
-          # fetches pristine-tar and upstream tag refs from origin afterward.
+          # Shallow on purpose, as in debusine.yml: qli-ci/lib/prepare-release
+          # only needs HEAD, and qli-ci/lib/generate-source-package fetches
+          # the pristine-tar branch and the one upstream tag gbp needs from
+          # origin itself, so full history and all tags would only slow down
+          # large repos. Keep credentials for those fetches.
+          fetch-depth: 1
           persist-credentials: true
 
       - name: Prepare release
@@ -444,7 +449,6 @@ jobs:
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ inputs.qli-ci-ref }}
-          token: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
           path: qli-ci
           fetch-depth: 1
           sparse-checkout: |

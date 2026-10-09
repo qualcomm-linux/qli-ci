@@ -20,6 +20,8 @@ set -ex
 # Outputs:
 #   `git push origin`
 
+# Resolve sibling helpers through an absolute path captured once, so that a
+# later cd cannot break them.
 lib_dir=$(cd "$(dirname "$0")" && pwd)
 
 cd srcpkg

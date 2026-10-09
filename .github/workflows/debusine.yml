@@ -147,15 +147,20 @@ jobs:
       srcpkg_name: ${{ steps.generate-source-package.outputs.srcpkg_name }}
       srcpkg_version: ${{ steps.generate-source-package.outputs.srcpkg_version }}
     steps:
+      # Held back on checkout v6: v7 refuses to check out fork PR code under
+      # workflow_run, which debusine-pr-check relies on. Tracked in
+      # https://github.com/qualcomm-linux/qli-ci/issues/131
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           # Using the parent directory for Debian build artifacts is problematic, for example breaking actions/upload-artifact:
           # https://github.com/actions/upload-artifact/issues/176
           path: srcpkg
           ref: ${{ needs.resolve.outputs.source_ref }}
-          # Keep credentials: qli-ci/lib/generate-source-package fetches
-          # pristine-tar and upstream tag refs from origin afterward. srcpkg/
-          # is never uploaded as an artifact.
+          # Shallow (default fetch-depth: 1) on purpose: qli-ci/lib/
+          # prepare-release only needs HEAD, and qli-ci/lib/
+          # generate-source-package fetches the pristine-tar branch and the
+          # one upstream tag gbp needs from origin itself. Keep credentials
+          # for those fetches; srcpkg/ is never uploaded as an artifact.
           persist-credentials: true
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:

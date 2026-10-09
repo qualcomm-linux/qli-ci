@@ -19,7 +19,7 @@ Primary scope:
   `pkg-release-reusable-workflow.yml`.
 - Those workflows are hybrid:
   - Debian suites (`trixie`, `sid`, `unstable`, `bookworm`, `forky`) use
-    `qualcomm-linux/debusine-action` and Debusine builder images by default.
+    the Debusine helpers in `lib/` and Debusine builder images by default.
     They can fall back to local `pkg-builder` when Debusine credentials are not
     available or when docker build is forced by input.
   - Ubuntu codenames (`noble`, `questing`, `resolute`, and similar targets)
@@ -28,8 +28,8 @@ Primary scope:
   on environment `Ubuntu Production`, then pushes git state and uploads
   artifacts to apt artifactory. Debian release path gates on environment
   `Production`.
-- Debian-path helper entrypoints come from checked-out
-  `debusine-action/lib/`:
+- Debian-path helper entrypoints come from this repo's `lib/`, checked out
+  at `qli-ci-ref` as `qli-ci/lib/`:
   - `prepare-release`
   - `generate-source-package`
   - `build`
@@ -100,14 +100,63 @@ transient branch (for example `debian/pr/*`), routing can fall back to
   - prebuilt promotion flow
 - `.github/workflows/pkg-upstream-pr-build-reusable-workflow.yml`
   - validate upstream PRs against Debian packaging build
+- `.github/workflows/debusine.yml`
+  - standalone Debusine reusable workflow called by the `pkg-workflows/debusine/`
+    stubs; checks out `lib/` at its `qli-ci-ref` input
 - `pkg-workflows/debusine/*`
   - source Debusine stub workflows copied into managed `pkg-*` repos
 
 ## Important Debian/Debusine Helper Entrypoints
 
-The Debian branch of reusable workflows depends on checked-out
-`debusine-action/lib/` scripts. If you change those interfaces, update both the
-`debusine-action` repo and the call sites in `qli-ci`.
+The Debian branch of reusable workflows (and `debusine.yml`) depends on this
+repo's `lib/` scripts, checked out at `qli-ci-ref`. If you change those
+interfaces, update all call sites in `.github/workflows/`. These were moved here
+(with history) from `qualcomm-linux/debusine-action`.
+
+## Debusine Reusable Workflow (`debusine.yml`)
+
+`.github/workflows/debusine.yml` is the standalone reusable workflow called by
+the `pkg-workflows/debusine/` stubs. It is split into `resolve`,
+`source-package`, `build`, and `release` jobs.
+
+- Source-package generation runs in the suite-matched builder image
+  `ghcr.io/qualcomm-linux/debusine-pkg-builder:<suite>`; Debusine client,
+  build orchestration, and release steps run in the `trixie` builder image.
+  Builder images are still published from `qualcomm-linux/debusine-action`.
+- Branch-to-suite resolution is explicit in `resolve`:
+  - `qli/debian/latest`, `qli-staging/debian/latest`, or `qcom/debian/latest`
+    (transitional) -> `forky`
+  - `qli/debian/trixie`, `qli-staging/debian/trixie`, or `qcom/debian/trixie`
+    (transitional) -> `trixie`
+- Branch prefix also determines the package version string identifier:
+  - `qli/` or `qcom/` (transitional) -> `qli`
+  - `qli-staging/` -> `qli+staging`
+
+Caller inputs: `target_branch`, `source_ref`, `release`, `qli-ci-ref`,
+`debusine-parent-workspace` (defaults to `qli-ci`), `workflow_kind`,
+`job_index`. Required secrets: `DEBUSINE_USER`, `DEBUSINE_TOKEN`,
+`DEBUSINE_RELEASE_TOKEN`.
+
+Design decisions to preserve:
+
+- Callers pass `qli-ci-ref` explicitly and internal `actions/checkout` steps
+  use it for `lib/`. Do not reintroduce workflow-SHA lookup from the job OIDC
+  token (or `id-token: write` in callers solely for that); this was replaced
+  in response to review feedback about depending on undocumented token claims.
+- Keep `debusine-release.yml` branch-local: it lives on packaging branches,
+  derives the release target from `github.ref_name`, and does not ask for a
+  separate `target-branch` input.
+- Preserve the source-package flow: generate from the checked-out packaging
+  tree, stage files from the generated `.changes`, upload as the
+  `source-package` artifact, and restore into the build workspace root before
+  Debusine import/build. Do not bypass it with ad hoc file moves.
+- Keep the `resolve` suite map in sync with the `check-branches` candidates in
+  `pkg-workflows/debusine/debusine-daily.yml`.
+
+When changing `debusine.yml` contracts, also update
+`pkg-workflows/debusine/*` (including `README.md` and `README.debusine.md`)
+and `tools/repo-management/debug_branch_mod.py`, then resync managed `pkg-*`
+repos with `tools/repo-management/update-workflow-files`.
 
 ## Do Not Reintroduce
 
@@ -153,8 +202,8 @@ the test flow contract changes.
 
 - Keep package-repo callers thin; shared behavior belongs in reusable
   workflows/scripts here.
-- Keep Debusine implementation details in `debusine-action` unless `qli-ci`
-  orchestration must change.
+- Keep Debusine implementation details in `lib/`, separate from `qli-ci`
+  package-facing orchestration.
 - When workflow contracts change, update templates under `pkg-workflows/`
   and verify downstream in `pkg-example`.
 - Keep changes explicit and reviewable; avoid hidden behavior changes.

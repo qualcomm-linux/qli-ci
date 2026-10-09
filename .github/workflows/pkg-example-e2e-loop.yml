@@ -2,9 +2,10 @@ name: pkg-example e2e loop
 
 description: |
   Runs pkg-example integration loops against the qli-ci ref under test:
-  Debusine lane first, then prebuilt promote lane, then Debian and Ubuntu
-  source lanes. Lifecycle: reset -> promote -> promotion PR build -> merge
-  -> release.
+  Debusine lane first, then a Debusine fork PR check, then prebuilt promote
+  lane, then Debian and Ubuntu source lanes (the Ubuntu lane ends with a PR
+  Build fork PR check). Lifecycle: reset -> promote -> promotion PR build ->
+  merge -> release.
 
 on:
   pull_request:
@@ -995,6 +996,18 @@ jobs:
         run: |
           set -euo pipefail
           ./tests/pkg-example/pkg_example_e2e_loop.sh release-tag ubuntu v1.1.0
+
+      - name: Ubuntu fork PR check
+        if: ${{ (vars.DISABLE_FORK_PR_PATH || 'false') != 'true' }}
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          FORK_BOT_TOKEN: ${{ secrets.DEB_PKG_FORK_BOT_CI_TOKEN }}
+          FORK_BOT_USER: ${{ vars.DEB_PKG_FORK_BOT_CI_USER }}
+          FORK_BOT_REPO_NAME: ${{ vars.DEB_PKG_FORK_BOT_CI_REPO_NAME }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./tests/pkg-example/pkg_example_e2e_loop.sh fork-pr-check ubuntu
 
       - name: Build loop summary
         if: ${{ always() }}

@@ -11,7 +11,6 @@ Current scope is the `pkg-example` loop test implemented by:
 - `.github/workflows/pkg-example-e2e-loop.yml`
 - `tests/pkg-example/pkg_example_e2e_loop.sh`
 - `tests/pkg-example/debian/` (Debian packaging metadata fixture)
-- `tests/pkg-example/pkg-pr-build-check.yml` (pkg-example-specific fixture)
 
 The suite validates that a given `qli-ci` ref works across the package
 lifecycle loop:
@@ -148,10 +147,11 @@ retargeted.
 `reset-lane <lane>` performs, in order:
 
 1. Rebuild `pkg-example`'s default branch from scratch as a fresh orphan
-   commit, force-pushed. Content comes from this qli-ci checkout: the five
-   `pkg-*` caller workflows (ref-patched to the ref under test), the
-   `pkg-example`-specific `pkg-pr-build-check.yml` fixture (also ref-patched),
-   and the full Debusine default-branch set (`debusine-daily.yml`,
+   commit, force-pushed. Content comes from this qli-ci checkout: the
+   `pkg-workflows/qli-ci/` caller workflows, including the `workflow_run`
+   `pkg-pr-build-check.yml` and the default-branch copy of `pkg-pr-hook.yml`
+   (all ref-patched to the ref under test), and the full
+   Debusine default-branch set (`debusine-daily.yml`,
    `debusine-pr-check.yml`, `debusine-release.yml`, `README.debusine.md`,
    also ref-patched since they call qli-ci's `debusine.yml` reusable
    workflow). `debusine-release.yml` is dispatched against
@@ -171,7 +171,9 @@ retargeted.
      `pkg-build-reusable-workflow.yml` too. That's the debian lane's job.
    - debian/ubuntu lanes: `pkg-pr-hook.yml` only (ref-patched) - no Debusine
      files, so their promotion PRs don't spuriously also trigger the
-     debusine split.
+     debusine split. `pkg-pr-hook.yml` is the untrusted half of PR Build;
+     the default branch's `pkg-pr-build-check.yml` reacts to it (see PR
+     Build Check Contract below).
 
 Every subsequent workflow dispatch in the loop targets `pkg-example`'s real
 default branch directly (there is no more `ci/qli-loop/*` temp branch): it is
@@ -210,6 +212,8 @@ Per enabled lane:
    - `curate-ubuntu-wip-after-first-release`
    - rewrites the top changelog WIP reminder entry to a releasable entry
      so the second release cycle can proceed autonomously.
+7. Ubuntu source lane only, after the last tag: `fork-pr-check ubuntu` (see
+   Fork PR Checks below).
 
 Post flow (always):
 
@@ -217,6 +221,29 @@ Post flow (always):
 - append summary to `$GITHUB_STEP_SUMMARY`
 - upsert PR comment (PR events, debian/ubuntu lanes)
 - `cleanup`
+
+## PR Build Check Contract
+
+PR Build is split the same way as Debusine PR CI. `pkg-pr-hook.yml` ("PR
+Build Hook", `pull_request`, on packaging branches) calls
+`pkg-pr-build-hook-reusable-workflow.yml`, which has no secrets and builds the
+PR head SHA: a source package for Debian suites, a local pkg-builder build for
+Ubuntu codenames. `pkg-pr-build-check.yml` ("PR Build Check", `workflow_run`,
+seeded on the default branch by reset) resolves the PR from the run's head
+SHA, stages the hook's artifact, calls `pkg-build-reusable-workflow.yml` with
+`import-pr-build: true`, and posts the `PR Build` commit status on the PR
+head SHA.
+
+The default branch also carries an identical copy of `pkg-pr-hook.yml`. It
+never triggers there, but GitHub registers a workflow's name from the default
+branch copy and `workflow_run` matches on that registered name. Without it,
+the hook stays registered under whatever name the default branch last had
+(historically `PR Build`), and `pkg-pr-build-check.yml` never fires.
+
+`wait-pr-build` polls `/repos/{repo}/commits/{sha}/status` for the `PR Build`
+context (same polling helper, `wait_for_commit_status`, as
+`wait-debusine-check`), keyed on the PR head SHA recorded by `sync-pr-hook`.
+There is no post-merge PR build.
 
 ## Debusine Lane Check Contract
 
@@ -241,7 +268,22 @@ needs its own validation. `release=false` because the real release already
 happened via the preceding `pkg-release.yml` dispatch; this step only
 validates the wiring.
 
-## Debusine Fork PR Check
+## Fork PR Checks
+
+Two checks open a real fork PR, one per PR CI split:
+
+- `fork-pr-check` (standalone job, described below): `qcom/debian/latest`,
+  `Debusine CI` status, recorded in `lanes["fork-pr-check"].fork_pr_check`.
+- `fork-pr-check ubuntu` (last step of the ubuntu lane, after its second
+  release): same steps against `qcom/ubuntu/resolute`, waiting for the
+  `PR Build` status, recorded in `lanes.ubuntu.fork_pr_check`. It covers the
+  untrusted local pkg-builder build and the trusted import of its build
+  area. The Debian PR Build path (source package -> Debusine) is the same
+  mechanism the Debusine fork check already exercises with a real fork.
+
+Both use the same fork-bot credentials and gate on `DISABLE_FORK_PR_PATH`.
+
+### Debusine Fork PR Check
 
 `promote-tag`'s promotion PRs are opened by `DEB_PKG_BOT_CI_TOKEN`, which has
 write access to `pkg-example`. GitHub therefore never applies the
@@ -282,7 +324,7 @@ A regression in either would pass the tag loop above without being caught.
    `qualcomm-linux/pkg-example:qcom/debian/latest`, authenticated as the fork
    bot (`DEB_PKG_FORK_BOT_CI_TOKEN`).
 4. Waits for the `Debusine CI` commit status on the fork PR's head SHA
-   (`wait_for_debusine_check`, same polling logic as the tag loop's check).
+   (`wait_for_commit_status`, same polling logic as the tag loop's check).
 5. Closes the PR without merging (disposable smoke check, not a real
    promotion) and deletes the throwaway branch on the fork.
 
@@ -310,8 +352,8 @@ Each state file tracks:
 - metadata (`qli_ci_ref`, promote mode, path toggles, `prepared`, local
   `repo_dir`, overall failure flags)
 - lane-level phases (`reset`, `seed`) for `debusine`, `debian`, `ubuntu`
-- fork-pr-check lane: `fork_pr_check` phase only (see Debusine Fork PR Check
-  above)
+- fork-pr-check lane: `fork_pr_check` phase only (see Fork PR Checks above)
+- ubuntu lane: also a lane-level `fork_pr_check` phase
 - tag-level phases (`promote`, `sync`, `prbuild`, `merge`, `release`)
 - promotion PR metadata (`number`, URL, head branch, head SHA)
 
@@ -324,7 +366,7 @@ Summary output path matches the state file's job (e.g.
 
 Rendered as a table with lane/tag rows. `reset` and `seed` are displayed on the
 first tag row per lane and as `n/a` on subsequent tag rows. Fork PR check
-result is displayed as a separate line.
+results are displayed as separate lines.
 
 ## Credentials and Access Contracts
 
@@ -343,7 +385,7 @@ Used for:
 
 No silent fallback is expected for this token.
 
-Required for the fork-pr-check job only:
+Required for the fork-pr-check job and the ubuntu lane's fork PR check step:
 
 - `DEB_PKG_FORK_BOT_CI_TOKEN` (secret) - PAT for the dedicated fork-bot
   account
@@ -365,8 +407,9 @@ To avoid stale duplicate PR Build runs:
 - PR-hook templates include:
   - `concurrency.group: pr-build-${{ github.event.pull_request.number || github.ref }}`
   - `cancel-in-progress: true`
-- e2e waits for PR Build using the exact expected PR head SHA.
-- if multiple matching runs exist, the latest by `createdAt` is selected.
+- e2e waits for the `PR Build` commit status on the exact expected PR head
+  SHA, so a cancelled run for the pre-sync SHA is never picked up.
+- `pkg-pr-build-check.yml` posts no status for a cancelled hook run.
 
 The debusine lane has no equivalent step: reset already ref-patches
 `debusine-pr-hook.yml` on `qcom/debian/latest`, and promotion PRs branch off
@@ -423,7 +466,8 @@ When validating architecture vs implementation, verify:
    from this repo's own `pkg-workflows/*` and `tests/pkg-example/*` content —
    it must never dispatch anything that lives in `pkg-example` itself.
 9. PR-hook templates still define PR-level concurrency cancel-in-progress.
-10. PR-build wait still keys on PR head SHA and chooses latest run.
+10. PR-build wait still polls the `PR Build` commit status context on the PR
+    head SHA, not a dispatched or hook run.
 11. Debusine check wait still polls the `Debusine CI` commit status context,
     not a dispatched run.
 12. Release wait still handles pending deployment approvals.
@@ -436,5 +480,16 @@ When validating architecture vs implementation, verify:
 17. The `DEB_PKG_FORK_BOT_CI_USER` account still has no write access to
     `pkg-example` - if it does, `fork-pr-check` silently stops exercising a
     real fork PR.
+18. `pkg-pr-build-hook-reusable-workflow.yml` still declares no `secrets:`,
+    resolves its build target from `github.base_ref` only, and builds
+    `pull_request.head.sha`; `pkg-pr-build-check.yml` never checks out PR
+    code and only calls `pkg-build-reusable-workflow.yml` with
+    `import-pr-build: true`.
+19. The ubuntu lane still ends with `fork-pr-check ubuntu`, gated on
+    `DISABLE_FORK_PR_PATH`.
+20. `pkg-workflows/qli-ci/pkg-pr-hook.yml` and
+    `pkg-workflows/debian/pkg-pr-hook.yml` are still byte-identical, and
+    their `name:` still matches `pkg-pr-build-check.yml`'s
+    `workflow_run.workflows` entry.
 
 If any item changes intentionally, update this document in the same PR.

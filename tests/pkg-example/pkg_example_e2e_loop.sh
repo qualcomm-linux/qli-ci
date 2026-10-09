@@ -35,6 +35,7 @@ PREBUILT_FIXTURE_ROOT=".e2e-prebuilt-fixtures"
 # pkg-example's default branch caller workflows with a 1:1 qli-ci template.
 DEFAULT_BRANCH_CALLER_FILES=(
   pkg-build.yml
+  pkg-pr-build-check.yml
   pkg-pr-hook.yml
   pkg-promote.yml
   pkg-promote-prebuilt.yml
@@ -385,11 +386,6 @@ rebuild_default_branch_tree() {
     cp "${QLI_CI_ROOT}/pkg-workflows/qli-ci/${wf}" ".github/workflows/${wf}"
     patch_qli_ref_file ".github/workflows/${wf}"
   done
-
-  # pkg-example-specific, not a qli-ci template, but still calls back into
-  # qli-ci reusable workflows so it needs the same ref patch.
-  cp "${QLI_CI_ROOT}/tests/pkg-example/pkg-pr-build-check.yml" .github/workflows/pkg-pr-build-check.yml
-  patch_qli_ref_file .github/workflows/pkg-pr-build-check.yml
 
   # Debusine default-branch set. These call qli-ci's debusine.yml reusable
   # workflow, so they need the same ref patch.
@@ -745,66 +741,31 @@ find_promotion_pr() {
   return 0
 }
 
+PR_BUILD_CHECK_CONTEXT="PR Build"
+
+# Polls the "PR Build" commit status that pkg-pr-build-check.yml posts once
+# its workflow_run reaction to the pkg-pr-hook.yml run resolves. The hook run
+# itself only builds the PR untrusted and never reports the result.
 wait_for_pr_build() {
-  local pr_branch="$1"
-  local pr_head_sha="$2"
+  local pr_head_sha="$1"
 
-  LAST_RUN_ID=""
-  LAST_RUN_URL=""
-  LAST_RUN_CONCLUSION="failure"
-
-  log "Waiting for a PR Build run on ${pr_branch} matching head SHA ${pr_head_sha}"
-
-  local found=0 attempt
-  for attempt in $(seq 1 100); do
-    abort_if_cancelled
-    local run_json
-    run_json="$(gh_bot run list \
-      -R "$PKG_REPO" \
-      --workflow .github/workflows/pkg-pr-hook.yml \
-      --branch "$pr_branch" \
-      --event pull_request \
-      --limit 40 \
-      --json databaseId,headSha,url,createdAt \
-      | jq -c --arg sha "$pr_head_sha" 'map(select(.headSha == $sha)) | sort_by(.createdAt) | last')"
-
-    if [[ "$run_json" != "null" && -n "$run_json" ]]; then
-      LAST_RUN_ID="$(jq -r '.databaseId' <<<"$run_json")"
-      LAST_RUN_URL="$(jq -r '.url' <<<"$run_json")"
-      found=1
-      break
-    fi
-
-    if (( attempt == 1 || attempt % 12 == 0 )); then
-      log "Still waiting for a PR Build run on ${pr_branch} (attempt ${attempt}/100)"
-    fi
-
-    abort_if_cancelled
-    sleep 5
-  done
-
-  if [[ "$found" -ne 1 || -z "$LAST_RUN_ID" ]]; then
-    log "Never found a PR Build run on ${pr_branch} matching head SHA ${pr_head_sha}"
-    return 1
-  fi
-
-  log "Found PR Build run ${LAST_RUN_URL}, waiting for it to conclude"
-  wait_for_run_conclusion "$LAST_RUN_ID" 360 5
+  wait_for_commit_status "$pr_head_sha" "$PR_BUILD_CHECK_CONTEXT"
 }
 
 DEBUSINE_CHECK_CONTEXT="Debusine CI"
 
-# Polls the commit's combined status for the "Debusine CI" context that
-# debusine-pr-check.yml posts once its workflow_run reaction to
-# debusine-pr-hook.yml resolves. There is no dispatched run to watch here
-# (unlike wait_for_pr_build): debusine-pr-check.yml is workflow_run
-# triggered, so the only observable signal is the commit status itself.
-wait_for_debusine_check() {
+# Polls the commit's combined status for a context posted by a workflow_run
+# check (debusine-pr-check.yml or pkg-pr-build-check.yml) once its reaction
+# to the untrusted pull_request hook resolves. There is no dispatched run to
+# watch: the check is workflow_run triggered, so the only observable signal
+# is the commit status itself.
+wait_for_commit_status() {
   local pr_head_sha="$1"
-  local max_attempts="${2:-360}"
-  local sleep_seconds="${3:-5}"
+  local context="$2"
+  local max_attempts="${3:-360}"
+  local sleep_seconds="${4:-5}"
 
-  log "Waiting for the ${DEBUSINE_CHECK_CONTEXT} commit status on ${pr_head_sha}"
+  log "Waiting for the ${context} commit status on ${pr_head_sha}"
 
   local status_json status attempt
   for attempt in $(seq 1 "$max_attempts"); do
@@ -814,28 +775,28 @@ wait_for_debusine_check() {
       status_json=""
     }
     if [[ -n "$status_json" ]]; then
-      status="$(jq -r --arg ctx "$DEBUSINE_CHECK_CONTEXT" '[.statuses[]? | select(.context == $ctx)] | first | .state // empty' <<<"$status_json" 2>/dev/null || true)"
+      status="$(jq -r --arg ctx "$context" '[.statuses[]? | select(.context == $ctx)] | first | .state // empty' <<<"$status_json" 2>/dev/null || true)"
       case "$status" in
         success)
-          log "${DEBUSINE_CHECK_CONTEXT} succeeded for ${pr_head_sha}"
+          log "${context} succeeded for ${pr_head_sha}"
           return 0
           ;;
         failure|error)
-          log "${DEBUSINE_CHECK_CONTEXT} concluded ${status} for ${pr_head_sha}"
+          log "${context} concluded ${status} for ${pr_head_sha}"
           return 1
           ;;
       esac
     fi
 
     if (( attempt == 1 || attempt % 12 == 0 )); then
-      log "Still waiting for ${DEBUSINE_CHECK_CONTEXT} on ${pr_head_sha} (attempt ${attempt}/${max_attempts}, current status=${status:-none yet})"
+      log "Still waiting for ${context} on ${pr_head_sha} (attempt ${attempt}/${max_attempts}, current status=${status:-none yet})"
     fi
 
     abort_if_cancelled
     sleep "$sleep_seconds"
   done
 
-  log "Timed out waiting for ${DEBUSINE_CHECK_CONTEXT} on ${pr_head_sha} after ${max_attempts} attempts"
+  log "Timed out waiting for ${context} on ${pr_head_sha} after ${max_attempts} attempts"
   return 1
 }
 
@@ -876,21 +837,23 @@ merge_promotion_pr() {
   return 1
 }
 
-# Opens a genuine fork PR against qcom/debian/latest, authenticated as a
+# Opens a genuine fork PR against target_branch, authenticated as a
 # dedicated bot account that deliberately has no write access to
-# pkg-example, then waits for the Debusine CI commit status before closing
+# pkg-example, then waits for the given commit status context before closing
 # it. Unlike promote-tag's same-repo bot PR (which GitHub always treats as
 # trusted, since that bot has write access), this is the only path in the
-# loop that exercises the actual condition debusine-pr-check.yml's
-# resolve-pr job must handle: workflow_run.pull_requests[] is empty because
-# the PR's head repo differs from its base repo and its author lacks write
-# access. Must be called from inside the pkg-example clone (repo_dir), with
-# origin/qcom/debian/latest present.
+# loop that exercises the actual condition the workflow_run checks'
+# resolve-pr jobs (debusine-pr-check.yml, pkg-pr-build-check.yml) must
+# handle: workflow_run.pull_requests[] is empty because the PR's head repo
+# differs from its base repo and its author lacks write access. Must be
+# called from inside the pkg-example clone (repo_dir), with
+# origin/<target_branch> present.
 #
 # Only echoes the final PR URL to stdout on success; all progress goes to
 # stderr via log(), so callers can capture the URL with a bare $(...).
 perform_fork_pr_check() {
-  local target_branch="qcom/debian/latest"
+  local target_branch="$1"
+  local status_context="$2"
   local start_ref="origin/${target_branch}"
 
   if [[ -z "$FORK_BOT_TOKEN" || -z "$FORK_BOT_USER" || -z "$FORK_BOT_REPO_NAME" ]]; then
@@ -945,7 +908,7 @@ perform_fork_pr_check() {
       --base "$target_branch" \
       --head "${FORK_BOT_USER}:${branch}" \
       --title "test: fork PR check smoke test (run ${RUN_ID_FALLBACK})" \
-      --body "Disposable PR opened by the qli-ci pkg-example e2e loop to exercise the real fork-PR path of debusine-pr-check.yml (workflow_run.pull_requests[] empty, read-only token, no secrets). Safe to ignore; closed automatically once Debusine CI reports a status." \
+      --body "Disposable PR opened by the qli-ci pkg-example e2e loop to exercise the real fork-PR path of the ${status_context} check (workflow_run.pull_requests[] empty, read-only token, no secrets). Safe to ignore; closed automatically once ${status_context} reports a status." \
       2>&1)"; then
     log "Failed to open fork PR: ${pr_url}"
     git checkout "$PKG_BASE_REF" >/dev/null 2>&1 || true
@@ -955,7 +918,7 @@ perform_fork_pr_check() {
   log "Opened fork PR ${pr_url} (head SHA ${head_sha})"
 
   local check_rc=0
-  wait_for_debusine_check "$head_sha" || check_rc=$?
+  wait_for_commit_status "$head_sha" "$status_context" || check_rc=$?
 
   log "Closing fork PR #${pr_number}"
   gh_fork_bot pr close "$pr_number" -R "$PKG_REPO" >/dev/null 2>&1 || \
@@ -1064,6 +1027,7 @@ cmd_init() {
         ubuntu: {
           reset: {status: "skipped", url: ""},
           seed: {status: "skipped", url: ""},
+          fork_pr_check: {status: "skipped", url: ""},
           tags: {
             "v1.0.0": {
               promote: {status: "skipped", url: ""},
@@ -1482,22 +1446,22 @@ cmd_wait_pr_build() {
     return 0
   fi
 
-  local pr_head pr_head_sha
-  pr_head="$(state_get ".lanes[\"$lane\"].tags[\"$tag\"].pr.head")"
+  local pr_head_sha pr_url
   pr_head_sha="$(state_get ".lanes[\"$lane\"].tags[\"$tag\"].pr.head_sha")"
+  pr_url="$(state_get ".lanes[\"$lane\"].tags[\"$tag\"].pr.url")"
 
-  if [[ -z "$pr_head" || -z "$pr_head_sha" ]]; then
-    set_tag_phase "$lane" "$tag" "prbuild" "failure" ""
-    mark_overall_failure "Missing PR branch/SHA for wait ${lane} ${tag}"
+  if [[ -z "$pr_head_sha" ]]; then
+    set_tag_phase "$lane" "$tag" "prbuild" "failure" "$pr_url"
+    mark_overall_failure "Missing PR head SHA for wait ${lane} ${tag}"
     return 1
   fi
 
-  if wait_for_pr_build "$pr_head" "$pr_head_sha"; then
-    set_tag_phase "$lane" "$tag" "prbuild" "success" "$LAST_RUN_URL"
+  if wait_for_pr_build "$pr_head_sha"; then
+    set_tag_phase "$lane" "$tag" "prbuild" "success" "$pr_url"
     return 0
   fi
 
-  set_tag_phase "$lane" "$tag" "prbuild" "failure" "${LAST_RUN_URL:-$(state_get ".lanes[\"$lane\"].tags[\"$tag\"].pr.url")}"
+  set_tag_phase "$lane" "$tag" "prbuild" "failure" "$pr_url"
   mark_overall_failure "PR build failed for ${lane} ${tag}"
   return 1
 }
@@ -1537,7 +1501,7 @@ cmd_wait_debusine_check() {
     return 1
   fi
 
-  if wait_for_debusine_check "$pr_head_sha"; then
+  if wait_for_commit_status "$pr_head_sha" "$DEBUSINE_CHECK_CONTEXT"; then
     set_tag_phase "$lane" "$tag" "prbuild" "success" "$pr_url"
     return 0
   fi
@@ -1547,39 +1511,67 @@ cmd_wait_debusine_check() {
   return 1
 }
 
-# Standalone job, run once per e2e run against qcom/debian/latest as the
-# debusine lane (or an earlier run) left it: a smoke test of the real fork-PR
-# path, distinct from the debusine lane's same-repo promotion PRs.
+# Smoke test of the real fork-PR path, distinct from the lanes' same-repo
+# promotion PRs. "debusine" (default, the standalone fork-pr-check job) runs
+# against qcom/debian/latest as the debusine lane (or an earlier run) left it
+# and records into lanes["fork-pr-check"]; "ubuntu" runs at the end of the
+# ubuntu lane against qcom/ubuntu/resolute and records into
+# lanes.ubuntu.fork_pr_check.
 cmd_fork_pr_check() {
   ensure_state
+  local flow="${1:-debusine}"
+  local state_lane target_branch status_context
+
+  case "$flow" in
+    debusine)
+      state_lane="fork-pr-check"
+      target_branch="qcom/debian/latest"
+      status_context="$DEBUSINE_CHECK_CONTEXT"
+      ;;
+    ubuntu)
+      state_lane="ubuntu"
+      target_branch="$(lane_branch ubuntu)"
+      status_context="$PR_BUILD_CHECK_CONTEXT"
+      ;;
+    *)
+      echo "Unknown fork PR check flow: ${flow}" >&2
+      return 1
+      ;;
+  esac
 
   if [[ "$(state_get '.meta.skip')" == "true" ]]; then
-    set_lane_phase "fork-pr-check" "fork_pr_check" "skipped" ""
+    set_lane_phase "$state_lane" "fork_pr_check" "skipped" ""
+    return 0
+  fi
+
+  if [[ "$flow" == "ubuntu" && "$(lane_is_enabled ubuntu)" != "true" ]]; then
+    set_lane_phase "$state_lane" "fork_pr_check" "skipped" ""
     return 0
   fi
 
   local repo_dir
   repo_dir="$(state_get '.meta.repo_dir')"
   if [[ -z "$repo_dir" || ! -d "$repo_dir" ]]; then
-    set_lane_phase "fork-pr-check" "fork_pr_check" "failure" ""
+    set_lane_phase "$state_lane" "fork_pr_check" "failure" ""
     mark_overall_failure "Missing local repo clone during fork PR check"
     return 1
   fi
 
-  if ! git -C "$repo_dir" rev-parse --verify --quiet "origin/qcom/debian/latest" >/dev/null; then
-    set_lane_phase "fork-pr-check" "fork_pr_check" "failure" ""
-    mark_overall_failure "qcom/debian/latest branch not found in pkg-example"
+  git -C "$repo_dir" fetch origin "$target_branch" >/dev/null 2>&1 || true
+  if ! git -C "$repo_dir" rev-parse --verify --quiet "origin/${target_branch}" >/dev/null; then
+    set_lane_phase "$state_lane" "fork_pr_check" "failure" ""
+    mark_overall_failure "${target_branch} branch not found in pkg-example"
     return 1
   fi
 
   local pr_url=""
-  if pr_url="$(cd "$repo_dir" && perform_fork_pr_check)"; then
-    set_lane_phase "fork-pr-check" "fork_pr_check" "success" "$pr_url"
+  if pr_url="$(cd "$repo_dir" && perform_fork_pr_check "$target_branch" "$status_context")"; then
+    set_lane_phase "$state_lane" "fork_pr_check" "success" "$pr_url"
     return 0
   fi
 
-  set_lane_phase "fork-pr-check" "fork_pr_check" "failure" ""
-  mark_overall_failure "Fork PR check failed"
+  set_lane_phase "$state_lane" "fork_pr_check" "failure" ""
+  mark_overall_failure "Fork PR check (${flow}) failed"
   return 1
 }
 
@@ -1819,7 +1811,8 @@ cmd_write_summary() {
     done
 
     echo
-    echo "- fork PR check: $(format_cell "$(state_get '.lanes["fork-pr-check"].fork_pr_check.status')" "$(state_get '.lanes["fork-pr-check"].fork_pr_check.url')")"
+    echo "- fork PR check (Debusine CI): $(format_cell "$(state_get '.lanes["fork-pr-check"].fork_pr_check.status')" "$(state_get '.lanes["fork-pr-check"].fork_pr_check.url')")"
+    echo "- fork PR check (PR Build, ubuntu): $(format_cell "$(state_get '.lanes.ubuntu.fork_pr_check.status')" "$(state_get '.lanes.ubuntu.fork_pr_check.url')")"
     echo
     echo "Generated: $(iso_now)"
   } > "$SUMMARY_FILE"
@@ -1902,7 +1895,7 @@ Usage:
   $0 sync-pr-hook <debian|ubuntu> <tag>
   $0 wait-pr-build <debian|ubuntu> <tag>
   $0 wait-debusine-check <debusine> <tag>
-  $0 fork-pr-check
+  $0 fork-pr-check [debusine|ubuntu]
   $0 merge-pr <debian|ubuntu|debusine> <tag>
   $0 release-tag <debian|ubuntu|debusine> <tag>
   $0 curate-ubuntu-wip-after-first-release
@@ -1950,7 +1943,8 @@ main() {
       cmd_wait_debusine_check "${1:-}" "${2:-}"
       ;;
     fork-pr-check)
-      cmd_fork_pr_check
+      shift
+      cmd_fork_pr_check "${1:-debusine}"
       ;;
     merge-pr)
       shift

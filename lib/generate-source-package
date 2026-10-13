@@ -78,7 +78,8 @@ if [ "${DEBUSINE_ASSEMBLE_ORIG:-false}" = "true" ]; then
     # [a-z0-9][a-z0-9.+-]+ and versions to [A-Za-z0-9.+~:-].
     PKG=$(dpkg-parsechangelog -SSource|sed 's/[^a-z0-9.+-]//g')
     VER=$(dpkg-parsechangelog -SVersion|sed 's/[^A-Za-z0-9.+~:-]//g')
-    UPSTREAM_VER=$(echo "$VER" | sed 's/-[^-]*$//')
+    # Orig tarball names never carry the epoch.
+    UPSTREAM_VER=$(echo "$VER" | sed 's/^[0-9]*://; s/-[^-]*$//')
     ORIG_TAR="../${PKG}_${UPSTREAM_VER}.orig.tar.gz"
     echo "Creating orig tarball: ${ORIG_TAR}"
     tar czf "$ORIG_TAR" --exclude=./debian --exclude=./.git .
@@ -112,7 +113,8 @@ elif is_bare_debian_packaging; then
     # [a-z0-9][a-z0-9.+-]+ and versions to [A-Za-z0-9.+~:-].
     PKG=$(dpkg-parsechangelog -SSource | sed 's/[^a-z0-9.+-]//g')
     VER=$(dpkg-parsechangelog -SVersion | sed 's/[^A-Za-z0-9.+~:-]//g')
-    UPSTREAM_VER=$(echo "$VER" | sed 's/-[^-]*$//')
+    # Orig tarball names never carry the epoch.
+    UPSTREAM_VER=$(echo "$VER" | sed 's/^[0-9]*://; s/-[^-]*$//')
     uscan --download-current-version
     cd ..
 
@@ -153,7 +155,8 @@ else
         # using shallow here for now
         git fetch origin --no-tags refs/heads/pristine-tar:refs/heads/pristine-tar || true
         # sed for input sanitization
-        upstream_version=$(dpkg-parsechangelog -SVersion|sed 's/[^A-Za-z0-9.+~:-]//g'|cut -d- -f1)
+        # Drop any epoch: like gbp, upstream tags carry the bare upstream version.
+        upstream_version=$(dpkg-parsechangelog -SVersion|sed 's/[^A-Za-z0-9.+~:-]//g'|sed 's/^[0-9]*://'|cut -d- -f1)
         # Get the upstream tag pattern from gbp config
         upstream_tag_pattern=$(gbp config buildpackage.upstream-tag)
         # Only proceed if the pattern contains %(version)s

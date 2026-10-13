@@ -290,7 +290,11 @@ jobs:
     needs: resolve
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/qualcomm-linux/debusine-pkg-builder:${{ needs.resolve.outputs.suite }}
+      # Tooling container only (source package generation, Debusine client);
+      # the binary build runs in Debusine for the resolved suite. Always use
+      # the forky image, as debusine.yml's build and release jobs do with a
+      # fixed image, rather than following the suite into sid.
+      image: ghcr.io/qualcomm-linux/debusine-pkg-builder:forky
       options: --user 0:0
       credentials:
         username: ${{ github.actor }}

@@ -59,8 +59,12 @@ suite_id=$(
       end
   '
 )
+# Look the source package up with the typed source-version: lookup, which
+# matches the item's package and version fields. A bare NAME_VERSION segment
+# is a name: lookup, and cannot be written for a version with an epoch: the
+# ':' would make Debusine parse the segment as a typed lookup.
 workflow_start_output=$(debusine workflow start -w "${target_workspace}" --yaml package-publish <<END
-source_artifact: ${suite_id}@collections/${SRCPKG_NAME}_${SRCPKG_VERSION}
+source_artifact: ${suite_id}@collections/source-version:${SRCPKG_NAME}_${SRCPKG_VERSION}
 binary_artifacts:
   category: debian:binary-package
   collection: ${suite_id}@collections

@@ -26,9 +26,10 @@ for source tags:
 
 and lanes:
 
-- Debusine lane (`qcom/debian/latest`, Debusine PR CI check)
+- Debusine lane (`qli-staging/debian/latest`, Debusine PR CI check, real
+  Debusine release)
 - Prebuilt promote lane (`qcom/ubuntu/resolute`, prebuilt mode, `v1.0.0`)
-- Debian lane (`qcom/debian/latest`)
+- Debian lane (`qli-staging/debian/latest`)
 - Ubuntu lane (`qcom/ubuntu/resolute`)
 
 ## Trigger Model
@@ -151,13 +152,15 @@ retargeted.
    `debusine-pr-check.yml`, `debusine-release.yml`, `README.debusine.md`,
    also ref-patched since they call qli-ci's `debusine.yml` reusable
    workflow). `debusine-release.yml` is dispatched against
-   `qcom/debian/latest`, not this branch, but it still has to be seeded
+   `qli-staging/debian/latest`, not this branch, but it still has to be seeded
    here too: `workflow_dispatch` requires a workflow file to exist on the
    repository's actual default branch to be dispatchable via the API at
    all, regardless of the `--ref` passed at dispatch time.
-2. Wipe all tags and all `qcom/*`, `upstream/latest`, and `debian/pr/*`
-   branches.
-3. Recreate `qcom/debian/latest` as a fresh orphan branch, seeded from
+2. Wipe all tags and all `qcom/*`, `qli-staging/*`, `upstream/latest`, and
+   `debian/pr/*` branches.
+3. Recreate `qli-staging/debian/latest` (the Debian seed branch, used by
+   the debian and debusine lanes and the base the ubuntu lane branches
+   from) as a fresh orphan branch, seeded from
    `tests/pkg-example/debian/` plus a lane-specific PR-hook/release set:
    - debusine lane: `debusine-pr-hook.yml`, `debusine-release.yml`, and
      `README.debusine.md` only (`debusine-release.yml` ref-patched as above) -
@@ -200,9 +203,12 @@ Per enabled lane:
      `debusine-pr-hook.yml` does not reference `qli-ci` at all, so there is
      nothing to patch)
    - `merge-pr <lane> <tag>`
-   - `release-tag <lane> <tag>` — Debusine lane also dispatches
-     `debusine-release.yml` here (see Debusine Lane Check Contract below)
-6. Ubuntu source lane only between first and second tag:
+   - `release-tag <lane> <tag>` — the debusine lane dispatches
+     `debusine-release.yml` with `release=true` instead of `pkg-release.yml`
+     (see Debusine Lane Check Contract below)
+6. Debusine lane only, after the last tag: `daily-check debusine` (see
+   Debusine Lane Check Contract below)
+7. Ubuntu source lane only between first and second tag:
    - `curate-ubuntu-wip-after-first-release`
    - rewrites the top changelog WIP reminder entry to a releasable entry
      so the second release cycle can proceed autonomously.
@@ -219,7 +225,7 @@ Post flow (always):
 `debusine-pr-check.yml` is `workflow_run`-triggered and only ever fires if it
 exists on `pkg-example`'s actual default branch (GitHub will not register a
 `workflow_run` listener from any other branch). Reset (above) guarantees
-that. It reacts to `debusine-pr-hook.yml` (seeded on `qcom/debian/latest`,
+that. It reacts to `debusine-pr-hook.yml` (seeded on `qli-staging/debian/latest`,
 present on the promotion PR since it targets that branch) and posts a
 `Debusine CI` commit status on the PR head SHA.
 
@@ -229,13 +235,72 @@ context directly — there is no dispatched run to watch, unlike
 same field name debian/ubuntu use for their PR-build wait), so `merge-pr` and
 `release-tag`'s gating logic is unchanged and shared across all three lanes.
 
-`release-tag` additionally dispatches `debusine-release.yml` directly against
-`qcom/debian/latest` with `release=false` for the debusine lane only: it is a
-separate, standalone release path (via the `debusine.yml` reusable
-workflow) and is not exercised by `pkg-release.yml`'s own internal Debusine helper calls, so it
-needs its own validation. `release=false` because the real release already
-happened via the preceding `pkg-release.yml` dispatch; this step only
-validates the wiring.
+For the debusine lane, `release-tag` dispatches `debusine-release.yml`
+against `qli-staging/debian/latest` with `release=true`, and records that
+run as the tag's release link. It does not dispatch `pkg-release.yml`: the
+pkg-* release path is covered by the debian and ubuntu lanes. This is a real
+release, not a wiring check:
+
+- `debusine.yml` maps the `qli-staging/` prefix to the `qli-staging`
+  Debusine workspace and the `Staging` environment, so the Release job
+  publishes into `qli-staging` on the instance in pkg-example's
+  `DEBUSINE_HOST` variable (a test instance, not production). The
+  `Staging` environment needs `DEBUSINE_RELEASE_TOKEN` and no required
+  reviewers.
+- `lib/release` waits on Debusine's `package-publish` workflow and fails the
+  job if it fails, so a green Release job means the publish completed.
+- `lib/push-release` pushes the release commit, its
+  `qli-staging/debian/<version>` tag, and a follow-up `d/changelog: open
+  ...` commit back to the branch with the job's `GITHUB_TOKEN`. The pkg
+  branches ruleset on pkg-example must therefore not block GitHub Actions
+  on `qli-staging/debian/latest` (either disabled, or with an Actions
+  bypass).
+
+After the run succeeds, `release-tag` also checks the result itself and
+fails the phase otherwise: the run's Release job concluded `success` (not
+`skipped`), the branch tip is the `d/changelog: open ...` commit, and a
+`qli-staging/debian/*` tag points at its parent, whose changelog is no
+longer `UNRELEASED` and has no trailing `~`.
+
+Debusine will not publish a version into a suite that already holds the same
+or a higher one, and every run releases the same upstream versions into the
+same `qli-staging` suite. Before each debusine-lane release, `release-tag`
+therefore pushes one commit to `qli-staging/debian/latest` that gives the top
+changelog entry an epoch: `<epoch>:<version>`, where `<epoch>` is the run's
+start time in Unix minutes, computed once at `init` and stored as
+`meta.release_epoch`. Each run then sorts above every earlier run (an epoch
+outranks the upstream version), and v1.0.0 < v1.1.0 still holds within a run
+because both share the epoch. Unix minutes stay below dpkg's 2^31-1 epoch
+limit. The archive pool also refuses a file name it already holds, and file
+names drop the epoch, so the same value also goes into the Debian revision
+right after its leading `0`:
+`<epoch>:1.0.0-0e2e<epoch>qli+staging1`. That keeps every published file name
+unique per run, leaves the upstream version and the orig tarball unchanged,
+and keeps the vendor identifier at the end so `next_qcom_version` still bumps
+it normally. The entry stays `UNRELEASED` with its trailing `~`, so the
+release itself goes through the unmodified production path. After the
+release is verified, `release-tag` pushes one more commit that rewrites the
+entry push-release opened back to the plain version
+(`<epoch>:1.0.0-0e2e<epoch>qli+staging2~` -> `1.0.0-0qli+staging2~`), so the
+next promote, which writes a plain version and refuses to go below the
+current one, sees the same changelog as in production. No state is kept
+between runs. Release tags therefore look like
+`qli-staging/debian/<epoch>%1.0.0-0e2e<epoch>qli+staging1`.
+
+`daily-check debusine` runs once, after the v1.1.0 release, when
+`qli-staging/debian/latest` holds real promoted source. It dispatches
+`debusine-daily.yml` on the default branch, where it lives, and requires
+both a successful run and a successful
+`Debusine (qli-staging/debian/latest) / Build ...` job in it, so a run with
+an empty branch matrix can't pass. Daily calls `debusine.yml` with
+`release: false`, so it only builds and publishes nothing. The result is
+recorded in the lane-level `daily` phase and shown as a "Debusine Daily"
+line under the summary table.
+
+The seeded `debusine-daily.yml` keeps its nightly `schedule:` trigger. Between
+e2e runs, the sandbox's packaging branch is the bare reset seed, which has no
+`debian/watch`, so scheduled runs in pkg-example are expected to fail and are
+not part of the test.
 
 ## State Model
 
@@ -342,7 +407,7 @@ When validating architecture vs implementation, verify:
    - Ubuntu lane does not schedule after cancellation.
    - script trap/polling checks still exit promptly on cancel signals.
 7. Prebuilt lane seeds local fixture artifacts and sets `PROMOTE_MODE=prebuilt`.
-8. `reset-lane` rebuilds `pkg-example`'s default branch and `qcom/debian/latest`
+8. `reset-lane` rebuilds `pkg-example`'s default branch and `qli-staging/debian/latest`
    from this repo's own `pkg-workflows/*` and `tests/pkg-example/*` content —
    it must never dispatch anything that lives in `pkg-example` itself.
 9. PR-hook templates still define PR-level concurrency cancel-in-progress.

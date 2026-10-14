@@ -623,7 +623,7 @@ jobs:
     if: >-
       ${{
         always() &&
-        vars.AXIOM_ENABLE == 'true' &&
+        vars.IS_TEST_PKG != 'true' &&
         github.event_name == 'pull_request' &&
         needs.resolve.outputs.family == 'ubuntu' &&
         needs.docker-build.result == 'success' &&

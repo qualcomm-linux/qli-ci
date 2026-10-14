@@ -2,7 +2,7 @@ name: PR Build
 
 on:
   pull_request:
-    branches: [ debian/*, qcom/** ]
+    branches: [ debian/*, qcom/**, qli-staging/** ]
     types: [ opened, synchronize, reopened, closed ]
 
 concurrency:

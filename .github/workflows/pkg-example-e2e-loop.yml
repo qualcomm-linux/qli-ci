@@ -4,7 +4,7 @@ description: |
   Runs pkg-example integration loops against the qli-ci ref under test:
   Debusine lane first, then prebuilt promote lane, then Debian and Ubuntu
   source lanes. Lifecycle: reset -> promote -> promotion PR build -> merge
-  -> release.
+  -> release. The Debusine lane also dispatches Debusine Daily at the end.
 
 on:
   pull_request:
@@ -248,6 +248,14 @@ jobs:
         run: |
           set -euo pipefail
           ./tests/pkg-example/pkg_example_e2e_loop.sh release-tag debusine v1.1.0
+
+      - name: Debusine daily
+        env:
+          BOT_TOKEN: ${{ secrets.DEB_PKG_BOT_CI_TOKEN }}
+          STATE_FILE: ${{ env.STATE_FILE }}
+        run: |
+          set -euo pipefail
+          ./tests/pkg-example/pkg_example_e2e_loop.sh daily-check debusine
 
       - name: Build debusine summary
         if: ${{ always() }}

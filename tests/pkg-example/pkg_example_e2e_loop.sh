@@ -29,6 +29,13 @@ PREBUILT_TAGS=("v1.0.0")
 PREBUILT_DISTRO="resolute"
 PREBUILT_FIXTURE_ROOT=".e2e-prebuilt-fixtures"
 
+# Debian packaging branch seeded by every reset, used by the debian and
+# debusine lanes, and the base the ubuntu lane is branched from. The
+# qli-staging/ prefix maps to Debusine's qli-staging workspace and the
+# Staging environment in debusine.yml, so real Debusine releases from the
+# debusine lane land there and not in a production-named workspace.
+DEBIAN_SEED_BRANCH="qli-staging/debian/latest"
+
 # pkg-example's default branch caller workflows with a 1:1 qli-ci template.
 DEFAULT_BRANCH_CALLER_FILES=(
   pkg-build.yml
@@ -228,9 +235,9 @@ lane_is_enabled() {
 
 lane_branch() {
   case "$1" in
-    debian) echo "qcom/debian/latest" ;;
+    debian) echo "$DEBIAN_SEED_BRANCH" ;;
     ubuntu) echo "qcom/ubuntu/resolute" ;;
-    debusine) echo "qcom/debian/latest" ;;
+    debusine) echo "$DEBIAN_SEED_BRANCH" ;;
     *)
       echo "Unsupported lane: $1" >&2
       return 1
@@ -379,21 +386,23 @@ rebuild_default_branch_tree() {
   cp "${QLI_CI_ROOT}/tests/pkg-example/pkg-pr-build-check.yml" .github/workflows/pkg-pr-build-check.yml
   patch_qli_ref_file .github/workflows/pkg-pr-build-check.yml
 
-  # Debusine default-branch set. These call debusine-action, not qli-ci, so
-  # there is no ref to patch: copying verbatim from this checkout already
-  # reflects the ref under test.
+  # Debusine default-branch set. These call qli-ci's debusine.yml reusable
+  # workflow, so they need the same ref patch.
   cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-daily.yml" .github/workflows/debusine-daily.yml
+  patch_qli_ref_file .github/workflows/debusine-daily.yml
   cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-check.yml" .github/workflows/debusine-pr-check.yml
+  patch_qli_ref_file .github/workflows/debusine-pr-check.yml
   cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
 
-  # debusine-release.yml is dispatched against qcom/debian/latest, not this
+  # debusine-release.yml is dispatched against $DEBIAN_SEED_BRANCH, not this
   # branch, but workflow_dispatch requires the workflow file to exist on the
   # repository's actual default branch to be dispatchable via the API at
   # all, regardless of --ref. Seed it here too for that reason alone.
   cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
+  patch_qli_ref_file .github/workflows/debusine-release.yml
 }
 
-# Populates the current (empty) working tree with the qcom/debian/latest
+# Populates the current (empty) working tree with the $DEBIAN_SEED_BRANCH
 # packaging-branch content. Must be called from inside the pkg-example
 # clone.
 #
@@ -405,7 +414,7 @@ rebuild_default_branch_tree() {
 # pkg-build-reusable-workflow.yml, which is what the debian lane exists to
 # validate. Once the debusine flow folds into the pkg-* flow this branching
 # goes away, but both still need coverage in the meantime.
-rebuild_qcom_debian_latest_tree() {
+rebuild_debian_seed_tree() {
   local lane="$1"
   local template_src="${QLI_CI_ROOT}/tests/pkg-example/debian"
   if [[ ! -d "$template_src" ]] || [[ -z "$(find "$template_src" -mindepth 1 -print -quit)" ]]; then
@@ -418,11 +427,12 @@ rebuild_qcom_debian_latest_tree() {
   chmod +x debian/rules
 
   if [[ "$lane" == "debusine" ]]; then
-    # Standalone debusine-*.yml set only, no qli-ci ref to patch (see
-    # comment in rebuild_default_branch_tree above): these call
-    # debusine-action, not qli-ci.
+    # Standalone debusine-*.yml set only. debusine-pr-hook.yml has no
+    # reusable-workflow call; debusine-release.yml calls qli-ci's
+    # debusine.yml and needs the ref patch.
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-hook.yml" .github/workflows/debusine-pr-hook.yml
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
+    patch_qli_ref_file .github/workflows/debusine-release.yml
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
   else
     cp "${QLI_CI_ROOT}/pkg-workflows/debian/pkg-pr-hook.yml" .github/workflows/pkg-pr-hook.yml
@@ -431,8 +441,8 @@ rebuild_qcom_debian_latest_tree() {
 }
 
 # Wipes and rebuilds pkg-example from scratch: the default branch
-# ($PKG_BASE_REF), all tags, and all qcom/*, upstream/latest and debian/pr/*
-# branches, then reseeds qcom/debian/latest. Must be called from inside the
+# ($PKG_BASE_REF), all tags, and all qcom/*, qli-staging/*, upstream/latest
+# and debian/pr/* branches, then reseeds $DEBIAN_SEED_BRANCH. Must be called from inside the
 # pkg-example clone (repo_dir), with origin already configured for push.
 perform_repo_reset() {
   local lane="$1"
@@ -455,7 +465,7 @@ perform_repo_reset() {
   fi
 
   # 2. Wipe all tags and ephemeral/packaging branches.
-  log "Wiping tags and qcom/*, upstream/latest, debian/pr/* branches"
+  log "Wiping tags and qcom/*, qli-staging/*, upstream/latest, debian/pr/* branches"
   local tag
   for tag in $(git tag); do
     git push origin --delete "$tag" >/dev/null 2>&1 || true
@@ -463,7 +473,7 @@ perform_repo_reset() {
 
   git push origin --delete upstream/latest >/dev/null 2>&1 || true
   local branch
-  for branch in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin/qcom); do
+  for branch in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin/qcom refs/remotes/origin/qli-staging); do
     git push origin --delete "$branch" >/dev/null 2>&1 || true
   done
   for branch in $(git branch -r | grep 'origin/debian/pr/' | sed 's|origin/||'); do
@@ -471,24 +481,24 @@ perform_repo_reset() {
   done
 
   git branch -D upstream/latest >/dev/null 2>&1 || true
-  for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/qcom); do
+  for branch in $(git for-each-ref --format='%(refname:short)' refs/heads/qcom refs/heads/qli-staging); do
     git branch -D "$branch" >/dev/null 2>&1 || true
   done
 
-  # 3. Recreate qcom/debian/latest as a fresh orphan branch.
-  log "Recreating qcom/debian/latest"
-  git checkout --orphan qcom/debian/latest >/dev/null
+  # 3. Recreate the Debian seed branch as a fresh orphan branch.
+  log "Recreating ${DEBIAN_SEED_BRANCH}"
+  git checkout --orphan "$DEBIAN_SEED_BRANCH" >/dev/null
   git rm -rf --cached . >/dev/null 2>&1 || true
   find . -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
-  rebuild_qcom_debian_latest_tree "$lane" || return 1
+  rebuild_debian_seed_tree "$lane" || return 1
   git add -A
   if git diff --cached --quiet; then
-    log "No files staged for qcom/debian/latest rebuild"
+    log "No files staged for ${DEBIAN_SEED_BRANCH} rebuild"
     return 1
   fi
-  git commit -s -m "ci: seed qcom/debian/latest for e2e run" >/dev/null
-  if ! git push origin --set-upstream qcom/debian/latest --force; then
-    log "Failed to force-push recreated qcom/debian/latest"
+  git commit -s -m "ci: seed ${DEBIAN_SEED_BRANCH} for e2e run" >/dev/null
+  if ! git push origin --set-upstream "$DEBIAN_SEED_BRANCH" --force; then
+    log "Failed to force-push recreated ${DEBIAN_SEED_BRANCH}"
     return 1
   fi
 
@@ -862,6 +872,7 @@ cmd_init() {
     --argjson enable_debian "$enable_debian" \
     --argjson enable_ubuntu "$enable_ubuntu" \
     --argjson enable_debusine "$enable_debusine" \
+    --arg release_epoch "$(( $(date -u +%s) / 60 ))" \
     '{
       meta: {
         qli_ci_ref: $qli_ref,
@@ -873,6 +884,7 @@ cmd_init() {
         enable_ubuntu: $enable_ubuntu,
         enable_debusine: $enable_debusine,
         prepared: false,
+        release_epoch: $release_epoch,
         overall_failure: false,
         note: "",
         repo_dir: ""
@@ -881,6 +893,7 @@ cmd_init() {
         debusine: {
           reset: {status: "skipped", url: ""},
           seed: {status: "n/a", url: ""},
+          daily: {status: "skipped", url: ""},
           tags: {
             "v1.0.0": {
               promote: {status: "skipped", url: ""},
@@ -1073,11 +1086,11 @@ cmd_seed_ubuntu() {
     return 1
   fi
 
-  log "Seeding qcom/ubuntu/resolute from qcom/debian/latest"
+  log "Seeding qcom/ubuntu/resolute from ${DEBIAN_SEED_BRANCH}"
   (
     cd "$repo_dir"
-    git fetch origin qcom/debian/latest >/dev/null 2>&1
-    git checkout -B qcom/ubuntu/resolute origin/qcom/debian/latest >/dev/null 2>&1
+    git fetch origin "$DEBIAN_SEED_BRANCH" >/dev/null 2>&1
+    git checkout -B qcom/ubuntu/resolute "origin/${DEBIAN_SEED_BRANCH}" >/dev/null 2>&1
     git push origin HEAD:refs/heads/qcom/ubuntu/resolute --force >/dev/null 2>&1
     git checkout "$PKG_BASE_REF" >/dev/null 2>&1
   )
@@ -1475,27 +1488,247 @@ cmd_release_tag() {
   local lane_branch
   lane_branch="$(lane_branch "$lane")"
 
+  # The debusine lane exercises the standalone debusine-* release path only:
+  # debusine-release.yml with release=true runs debusine.yml's Release job,
+  # which publishes into the branch prefix's Debusine workspace and pushes
+  # the release commit and tag back. The pkg-* release path is covered by
+  # the debian and ubuntu lanes.
+  if [[ "$lane" == "debusine" ]]; then
+    if ! apply_release_epoch "$lane_branch"; then
+      set_tag_phase "$lane" "$tag" "release" "failure" ""
+      mark_overall_failure "Failed applying the release epoch for ${lane} ${tag}"
+      return 1
+    fi
+
+    if ! dispatch_workflow_and_wait .github/workflows/debusine-release.yml "$lane_branch" -f release=true; then
+      set_tag_phase "$lane" "$tag" "release" "failure" "$LAST_RUN_URL"
+      mark_overall_failure "debusine-release.yml failed for ${lane} ${tag}"
+      return 1
+    fi
+
+    local release_url="$LAST_RUN_URL"
+    if ! verify_debusine_release "$LAST_RUN_ID" "$lane_branch"; then
+      set_tag_phase "$lane" "$tag" "release" "failure" "$release_url"
+      mark_overall_failure "Debusine release for ${lane} ${tag} did not complete"
+      return 1
+    fi
+
+    if ! clear_release_epoch "$lane_branch"; then
+      set_tag_phase "$lane" "$tag" "release" "failure" "$release_url"
+      mark_overall_failure "Failed clearing the release epoch for ${lane} ${tag}"
+      return 1
+    fi
+
+    set_tag_phase "$lane" "$tag" "release" "success" "$release_url"
+    return 0
+  fi
+
   if ! dispatch_workflow_and_wait .github/workflows/pkg-release.yml "$PKG_BASE_REF" --auto-approve-pending-deployments -f debian-branch="$lane_branch"; then
     set_tag_phase "$lane" "$tag" "release" "failure" "$LAST_RUN_URL"
     mark_overall_failure "Release failed for ${lane} ${tag}"
     return 1
   fi
 
-  local release_url="$LAST_RUN_URL"
+  set_tag_phase "$lane" "$tag" "release" "success" "$LAST_RUN_URL"
+  return 0
+}
 
-  # debusine-release.yml is a separate, standalone release path copied from
-  # debusine-action and is not exercised by pkg-release.yml's own internal
-  # Debusine helper calls, so it needs its own dispatch. release=false: the
-  # real release already happened above, this only validates the wiring.
-  if [[ "$lane" == "debusine" ]]; then
-    if ! dispatch_workflow_and_wait .github/workflows/debusine-release.yml "$lane_branch" -f release=false; then
-      set_tag_phase "$lane" "$tag" "release" "failure" "$LAST_RUN_URL"
-      mark_overall_failure "debusine-release.yml dispatch failed for ${lane} ${tag}"
-      return 1
-    fi
+# Debusine will not publish a version into a suite that already holds the
+# same or a higher one, and every e2e run releases the same upstream versions
+# into the same qli-staging suite. Before each Debusine release, give the top
+# changelog entry an epoch taken from this run's start time (Unix minutes, so
+# it stays within dpkg's 2^31-1 epoch limit): every run then sorts above all
+# earlier runs, and v1.0.0 < v1.1.0 still holds within a run because both
+# share the epoch.
+#
+# The archive pool also refuses a file name it already holds, and file names
+# drop the epoch. So the same value also goes into the Debian revision, right
+# after its leading "0" (1.0.0-0qli+staging1 -> 1.0.0-0e2e<epoch>qli+staging1).
+# That keeps every .dsc/.deb name unique per run, leaves the upstream version
+# and the orig tarball alone, and keeps the vendor identifier at the end, so
+# push-release's next_qcom_version still bumps it normally. The entry stays
+# UNRELEASED with its trailing "~", so the release itself goes through the
+# unmodified production path.
+apply_release_epoch() {
+  local branch="$1"
+  local epoch repo_dir
+  epoch="$(state_get '.meta.release_epoch')"
+  repo_dir="$(state_get '.meta.repo_dir')"
+
+  if [[ ! "$epoch" =~ ^[1-9][0-9]*$ ]]; then
+    log "Invalid release epoch '${epoch}' in state"
+    return 1
   fi
 
-  set_tag_phase "$lane" "$tag" "release" "success" "$release_url"
+  (
+    cd "$repo_dir" || exit 1
+    git fetch origin "$branch" >/dev/null 2>&1 || exit 1
+    git checkout -B "$branch" "origin/$branch" >/dev/null 2>&1 || exit 1
+
+    local header version new_version
+    header="$(head -n 1 debian/changelog)"
+    version="$(sed -n '1s/^[^ ]* (\([^)]*\)).*/\1/p' debian/changelog)"
+    if [[ -z "$version" || "$header" != *UNRELEASED* ]]; then
+      log "Unexpected top changelog entry on ${branch}: ${header}"
+      exit 1
+    fi
+    if [[ "$version" == *:* ]]; then
+      log "Top changelog version on ${branch} already has an epoch: ${version}"
+      exit 1
+    fi
+    local upstream revision
+    upstream="${version%-*}"
+    revision="${version##*-}"
+    if [[ "$upstream" == "$version" || "$revision" != 0* ]]; then
+      log "Unexpected Debian revision in ${branch} changelog version: ${version}"
+      exit 1
+    fi
+    new_version="${epoch}:${upstream}-0e2e${epoch}${revision#0}"
+
+    sed -i "1s/(${version//./\\.})/(${new_version})/" debian/changelog
+    if [[ "$(sed -n '1s/^[^ ]* (\([^)]*\)).*/\1/p' debian/changelog)" != "$new_version" ]]; then
+      log "Failed rewriting changelog version to ${new_version}"
+      exit 1
+    fi
+
+    git add debian/changelog
+    git commit -s -m "debian/changelog: add e2e release epoch ${epoch}" >/dev/null || exit 1
+    git push origin "HEAD:refs/heads/${branch}" >/dev/null 2>&1 || exit 1
+    log "Set ${branch} changelog version to ${new_version}"
+    git checkout "$PKG_BASE_REF" >/dev/null 2>&1
+  )
+}
+
+# Undoes apply_release_epoch on the entry push-release opened after the
+# release, so the rest of the lane (the next promote in particular, which
+# writes a plain version and refuses to go below the current one) sees the
+# same changelog as in production. Only the top entry changes; the released
+# entry and its tag keep the epoch.
+clear_release_epoch() {
+  local branch="$1"
+  local epoch repo_dir
+  epoch="$(state_get '.meta.release_epoch')"
+  repo_dir="$(state_get '.meta.repo_dir')"
+
+  (
+    cd "$repo_dir" || exit 1
+    git fetch origin "$branch" >/dev/null 2>&1 || exit 1
+    git checkout -B "$branch" "origin/$branch" >/dev/null 2>&1 || exit 1
+
+    local header version prefix new_version
+    header="$(head -n 1 debian/changelog)"
+    version="$(sed -n '1s/^[^ ]* (\([^)]*\)).*/\1/p' debian/changelog)"
+    prefix="${epoch}:"
+    if [[ "$header" != *UNRELEASED* || "$version" != "${prefix}"*"-0e2e${epoch}"* ]]; then
+      log "Unexpected top changelog entry on ${branch} after release: ${header}"
+      exit 1
+    fi
+    new_version="${version#"$prefix"}"
+    new_version="${new_version/-0e2e${epoch}/-0}"
+
+    sed -i "1s/(${version//./\\.})/(${new_version})/" debian/changelog
+    if [[ "$(sed -n '1s/^[^ ]* (\([^)]*\)).*/\1/p' debian/changelog)" != "$new_version" ]]; then
+      log "Failed rewriting changelog version to ${new_version}"
+      exit 1
+    fi
+
+    git add debian/changelog
+    git commit -s -m "debian/changelog: drop e2e release epoch ${epoch}" >/dev/null || exit 1
+    git push origin "HEAD:refs/heads/${branch}" >/dev/null 2>&1 || exit 1
+    log "Set ${branch} changelog version back to ${new_version}"
+    git checkout "$PKG_BASE_REF" >/dev/null 2>&1
+  )
+}
+
+# Checks that a successful debusine-release.yml run really released: its
+# Release job ran (rather than being skipped), and lib/push-release left the
+# release tag and the follow-up "open" commit on the packaging branch. The
+# Debusine publish itself is already checked inside the job, which waits on
+# the package-publish workflow and fails if it fails.
+verify_debusine_release() {
+  local run_id="$1"
+  local branch="$2"
+
+  local release_job_conclusion
+  release_job_conclusion="$(gh_bot run view "$run_id" -R "$PKG_REPO" --json jobs \
+    --jq '[.jobs[] | select(.name | endswith("/ Release")) | .conclusion] | first // ""')"
+  if [[ "$release_job_conclusion" != "success" ]]; then
+    log "Release job of run ${run_id} concluded '${release_job_conclusion:-missing}', expected 'success'"
+    return 1
+  fi
+
+  local repo_dir
+  repo_dir="$(state_get '.meta.repo_dir')"
+  (
+    cd "$repo_dir" || exit 1
+    git fetch --force --tags origin "$branch" >/dev/null 2>&1 || exit 1
+
+    local tip_subject workspace release_tag
+    tip_subject="$(git log -1 --format=%s FETCH_HEAD)"
+    if [[ "$tip_subject" != "d/changelog: open "* ]]; then
+      log "Tip of ${branch} is '${tip_subject}', expected the 'd/changelog: open ...' commit from push-release"
+      exit 1
+    fi
+
+    # The release commit is the tip's parent. prepare-release tags it as
+    # <workspace>/debian/<version>, with the branch prefix as workspace, and
+    # finalizes its changelog (no longer UNRELEASED, no trailing "~").
+    local release_commit release_header
+    release_commit="$(git rev-parse FETCH_HEAD^)"
+    release_header="$(git show "${release_commit}:debian/changelog" | head -n 1)"
+    if [[ "$release_header" == *UNRELEASED* || "$release_header" =~ \(.*~\) ]]; then
+      log "Release commit changelog header is not finalized: ${release_header}"
+      exit 1
+    fi
+
+    workspace="${branch%%/*}"
+    release_tag="$(git tag --points-at "$release_commit" --list "${workspace}/debian/*" | head -n 1)"
+    if [[ -z "$release_tag" ]]; then
+      log "No ${workspace}/debian/* release tag points at release commit ${release_commit}"
+      exit 1
+    fi
+    log "Verified Debusine release ${release_tag} (${release_header}) on ${branch}"
+  )
+}
+
+# Dispatches debusine-daily.yml (from the default branch, where it lives)
+# and requires a successful build job for the lane's packaging branch, so an
+# empty branch matrix can't pass.
+cmd_daily_check() {
+  ensure_state
+  local lane="$1"
+
+  if [[ "$(state_get '.meta.skip')" == "true" || "$(lane_is_enabled "$lane")" != "true" ]]; then
+    set_lane_phase "$lane" "daily" "skipped" ""
+    return 0
+  fi
+
+  if [[ "$(get_lane_phase_status "$lane" "reset")" != "success" ]]; then
+    set_lane_phase "$lane" "daily" "skipped" ""
+    return 0
+  fi
+
+  local lane_branch
+  lane_branch="$(lane_branch "$lane")"
+
+  if ! dispatch_workflow_and_wait .github/workflows/debusine-daily.yml "$PKG_BASE_REF"; then
+    set_lane_phase "$lane" "daily" "failure" "$LAST_RUN_URL"
+    mark_overall_failure "debusine-daily.yml failed for ${lane}"
+    return 1
+  fi
+
+  local build_conclusion
+  build_conclusion="$(gh_bot run view "$LAST_RUN_ID" -R "$PKG_REPO" --json jobs \
+    | jq -r --arg prefix "Debusine (${lane_branch}) / Build" \
+      '[.jobs[] | select(.name | startswith($prefix)) | .conclusion] | first // ""')"
+  if [[ "$build_conclusion" != "success" ]]; then
+    log "debusine-daily.yml build job for ${lane_branch} concluded '${build_conclusion:-missing}', expected 'success'"
+    set_lane_phase "$lane" "daily" "failure" "$LAST_RUN_URL"
+    mark_overall_failure "debusine-daily.yml did not build ${lane_branch}"
+    return 1
+  fi
+
+  set_lane_phase "$lane" "daily" "success" "$LAST_RUN_URL"
   return 0
 }
 
@@ -1648,6 +1881,9 @@ cmd_write_summary() {
     done
 
     echo
+    echo "- Debusine Daily: $(format_cell "$(state_get '.lanes["debusine"].daily.status // "skipped"')" "$(state_get '.lanes["debusine"].daily.url // ""')")"
+
+    echo
     echo "Generated: $(iso_now)"
   } > "$SUMMARY_FILE"
 
@@ -1731,6 +1967,7 @@ Usage:
   $0 wait-debusine-check <debusine> <tag>
   $0 merge-pr <debian|ubuntu|debusine> <tag>
   $0 release-tag <debian|ubuntu|debusine> <tag>
+  $0 daily-check <debusine>
   $0 curate-ubuntu-wip-after-first-release
   $0 merge-lane-state <source-state-file> <debian|ubuntu|debusine>
   $0 write-summary
@@ -1782,6 +2019,10 @@ main() {
     release-tag)
       shift
       cmd_release_tag "${1:-}" "${2:-}"
+      ;;
+    daily-check)
+      shift
+      cmd_daily_check "${1:-}"
       ;;
     curate-ubuntu-wip-after-first-release)
       cmd_curate_ubuntu_wip_after_first_release

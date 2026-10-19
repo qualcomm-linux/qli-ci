@@ -150,7 +150,7 @@ jobs:
       # Held back on checkout v6: v7 refuses to check out fork PR code under
       # workflow_run, which debusine-pr-check relies on. Tracked in
       # https://github.com/qualcomm-linux/qli-ci/issues/131
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Using the parent directory for Debian build artifacts is problematic, for example breaking actions/upload-artifact:
           # https://github.com/actions/upload-artifact/issues/176
@@ -162,7 +162,7 @@ jobs:
           # one upstream tag gbp needs from origin itself. Keep credentials
           # for those fetches; srcpkg/ is never uploaded as an artifact.
           persist-credentials: true
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ needs.resolve.outputs.qli_ci_ref }}
@@ -191,7 +191,7 @@ jobs:
           dcmd cp "$CHANGES_PATH" source-package/
 
       - name: Upload source package files
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: source-package-${{ inputs.job_index }}
           path: source-package
@@ -199,7 +199,7 @@ jobs:
 
       - name: Upload release bundle
         if: ${{ inputs.release }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-bundle-${{ inputs.job_index }}
           path: release.bundle
@@ -222,7 +222,7 @@ jobs:
       workspace: ${{ steps.build.outputs.workspace }}
       workflow_id: ${{ steps.build.outputs.workflow_id }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ needs.resolve.outputs.qli_ci_ref }}
@@ -230,7 +230,7 @@ jobs:
           persist-credentials: false
 
       - name: Download source package files
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: source-package-${{ inputs.job_index }}
           path: source-package
@@ -293,7 +293,7 @@ jobs:
           qli-ci/lib/generate-sources-tar
 
       - name: Upload metadata
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: metadata-${{ inputs.job_index }}
           path: |
@@ -328,7 +328,7 @@ jobs:
       deployments: write
       packages: read
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Using the parent directory for Debian build artifacts is problematic, for example breaking actions/upload-artifact:
           # https://github.com/actions/upload-artifact/issues/176
@@ -338,14 +338,14 @@ jobs:
           # commit and tag back to origin without re-authenticating. srcpkg/
           # is never uploaded as an artifact.
           persist-credentials: true
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: qualcomm-linux/qli-ci
           ref: ${{ needs.resolve.outputs.qli_ci_ref }}
           path: qli-ci
           persist-credentials: false
       - name: Download release bundle
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-bundle-${{ inputs.job_index }}
           path: .

@@ -21,6 +21,7 @@ pkg-fastrpc
 pkg-gbm-msm-backend
 pkg-hexagon-dsp-binaries
 pkg-kgsl
+pkg-khronos-opencl-headers
 pkg-libdiag
 pkg-mink-idl-compiler
 pkg-minkipc

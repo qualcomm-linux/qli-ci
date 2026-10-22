@@ -74,6 +74,42 @@ class CLIError(Exception):
         self.exit_code = exit_code
 
 
+class PushCallbacks(pygit2.RemoteCallbacks):
+    """RemoteCallbacks that captures per-ref push rejections.
+
+    pygit2's Remote.push() only raises for transport-level failures. A server
+    rejecting an individual ref (e.g. branch protection or a non-fast-forward
+    update) is reported *only* through push_update_reference, so without this a
+    rejected push silently looks like a success. We record the rejection reason
+    per ref so the caller can turn it into a hard error.
+    """
+
+    def __init__(self, token: str):
+        super().__init__(credentials=pygit2.UserPass("x-oauth-basic", token))
+        self.rejections: dict = {}
+
+    def push_update_reference(self, refname: str, message: Optional[str]) -> None:
+        # message is None when the ref updated successfully; a non-None string
+        # is the server's reason for rejecting this ref.
+        if message is not None:
+            self.rejections[refname] = message
+
+
+def push_or_raise(
+    remote: pygit2.Remote,
+    refspec: str,
+    callbacks: PushCallbacks,
+) -> None:
+    """Push a single refspec and raise CLIError if the server rejected any ref."""
+    callbacks.rejections.clear()
+    remote.push([refspec], callbacks=callbacks)
+    if callbacks.rejections:
+        detail = "; ".join(
+            f"{ref}: {msg}" for ref, msg in callbacks.rejections.items()
+        )
+        raise CLIError(f"remote rejected push ({refspec}): {detail}")
+
+
 def get_token() -> str:
     """Obtain the GitHub token via gh CLI."""
     try:
@@ -203,7 +239,7 @@ def process_branch(
     pkg_workdir: Path,
     source_dir: Path,
     gh_repo,
-    callbacks: pygit2.RemoteCallbacks,
+    callbacks: PushCallbacks,
     dry_run: bool,
     direct: bool = False,
 ) -> bool:
@@ -252,7 +288,7 @@ def process_branch(
 
     if direct:
         remote = pkg_repo.remotes["origin"]
-        remote.push([f"HEAD:refs/heads/{target_branch}"], callbacks=callbacks)
+        push_or_raise(remote, f"HEAD:refs/heads/{target_branch}", callbacks)
         print(f"✓ {target_branch}: pushed directly")
         return True
 
@@ -268,7 +304,7 @@ def process_branch(
 
     if not chore_is_current:
         remote = pkg_repo.remotes["origin"]
-        remote.push([f"+HEAD:refs/heads/{chore_branch}"], callbacks=callbacks)
+        push_or_raise(remote, f"+HEAD:refs/heads/{chore_branch}", callbacks)
         print(f"✓ {target_branch}: pushed {chore_branch}")
 
     if open_pr is None:
@@ -371,9 +407,7 @@ def main() -> None:
     # SPECIFICATION.md.
     require_pkg_repo_compliance_gate(full_repo)
 
-    callbacks = pygit2.RemoteCallbacks(
-        credentials=pygit2.UserPass("x-oauth-basic", token)
-    )
+    callbacks = PushCallbacks(token)
     gh = github.Github(auth=github.Auth.Token(token))
 
     changes = False

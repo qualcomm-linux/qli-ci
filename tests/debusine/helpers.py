@@ -28,7 +28,7 @@ from debusine.client.debusine import Debusine
 _log = logging.getLogger(__name__)
 
 # poll_workflow lives in lib/, which is not on sys.path by default
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "lib"))
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / "lib"))
 from poll_workflow import poll_until_complete
 
 

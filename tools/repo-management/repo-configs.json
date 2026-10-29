@@ -23,6 +23,17 @@
       "DEBUSINE_PARENT_WORKSPACE"
     ]
   },
+  "fork_pr_workflows": {
+    "public": {
+      "approval_policy": "all_external_contributors"
+    },
+    "private": {
+      "run_workflows_from_fork_pull_requests": true,
+      "send_write_tokens_to_workflows": false,
+      "send_secrets_and_variables": false,
+      "require_approval_for_fork_pr_workflows": true
+    }
+  },
   "environments": {
     "Production": {
       "protection": {

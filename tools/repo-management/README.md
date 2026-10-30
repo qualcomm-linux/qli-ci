@@ -188,11 +188,13 @@ The tool will interactively prompt for each secret value.
 ### update-workflow-files
 
 Ensures that workflow files in each relevant branch of a `pkg-*`
-repository match the current state of
-`qli-ci/pkg-workflows/debusine/` in a branch of
-`qualcomm-linux/qli-ci` (default: `main`). Clones both repositories
-into a temporary directory, compares files branch by branch, and pushes
-changes directly to each branch that needs updating.
+repository match the current state of `qli-ci/pkg-workflows/` in a
+branch of `qualcomm-linux/qli-ci` (default: `main`). Clones both
+repositories into a temporary directory, compares files branch by
+branch, removes obsolete workflow files left behind by earlier tooling,
+and pushes changes directly to each branch that needs updating. See
+SPECIFICATION.md ("Workflow Files") for which files each branch gets
+and which must be absent.
 
 **Usage:**
 ```bash
@@ -236,13 +238,18 @@ created or updated.
 #### Branch Selection
 
 By default, `update-workflow-files` processes `qli-ci` plus any
-packaging branches that exist in the target repository. Optionally, one
+managed packaging branches that exist in the target repository: the
+fixed list of Debian packaging branches, and every
+`qcom/ubuntu/<codename>` branch. Optionally, one
 or more branch names may be provided as additional positional arguments
 to restrict processing to exactly those branches (e.g.
 `./update-workflow-files pkg-foo qcom/debian/latest
 qcom/debian/trixie`). When branches are specified explicitly, the
 `qli-ci` existence check and auto-detection of packaging branches are
-skipped.
+skipped. An explicitly specified branch other than `qli-ci` gets the
+Ubuntu packaging file set if its name ends in `qcom/ubuntu/<codename>`
+(e.g. `dev/foo/qcom/ubuntu/resolute`), and the Debian packaging file
+set otherwise.
 
 #### Direct Push Mode
 
@@ -267,8 +274,9 @@ When `update-workflow-files` is invoked with `--debug-source-branch
 sourced workflow files are modified before being deployed or compared:
 
 - Every `uses:
-  qualcomm-linux/qli-ci/.github/workflows/debusine.yml@main`
-  value is rewritten to `@<branch>`.
+  qualcomm-linux/qli-ci/.github/workflows/<workflow>.yml@main`
+  value (the Debusine and pkg-* reusable workflows) is rewritten to
+  `@<branch>`.
 - The corresponding `with.qli-ci-ref: main` value is rewritten
   to `<branch>`.
 

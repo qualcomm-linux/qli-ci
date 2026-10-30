@@ -293,10 +293,10 @@ jobs:
       # Tooling container only (source package generation, Debusine client);
       # the binary build runs in Debusine for the resolved suite. Pinned
       # rather than following the suite, so debian/latest no longer gets the
-      # sid image, which tracks unstable. forky is the image debusine.yml's
-      # source-package job already uses for debian/latest. debusine.yml's
-      # build and release jobs pin trixie instead; the two need not match,
-      # since this container never builds the package.
+      # sid image, which tracks unstable. forky is the image
+      # debusine-source-package.yml already uses for debian/latest.
+      # debusine-build.yml and debusine-publish.yml pin trixie instead; the
+      # two need not match, since this container never builds the package.
       image: ghcr.io/qualcomm-linux/debusine-pkg-builder:forky
       options: --user 0:0
       credentials:

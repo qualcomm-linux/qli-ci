@@ -14,6 +14,9 @@ QLI_CI_REF="${QLI_CI_REF:-}"
 QLI_CI_PR_NUMBER="${QLI_CI_PR_NUMBER:-}"
 IS_FORK_PR="${IS_FORK_PR:-false}"
 BOT_TOKEN="${BOT_TOKEN:-}"
+FORK_BOT_TOKEN="${FORK_BOT_TOKEN:-}"
+FORK_BOT_USER="${FORK_BOT_USER:-}"
+FORK_BOT_REPO_NAME="${FORK_BOT_REPO_NAME:-}"
 ENABLE_DEBIAN_PATH_RAW="${ENABLE_DEBIAN_PATH:-1}"
 ENABLE_UBUNTU_PATH_RAW="${ENABLE_UBUNTU_PATH:-1}"
 ENABLE_DEBUSINE_PATH_RAW="${ENABLE_DEBUSINE_PATH:-1}"
@@ -101,6 +104,15 @@ normalize_bool() {
 
 gh_bot() {
   GH_TOKEN="$BOT_TOKEN" gh "$@"
+}
+
+# Authenticated as the dedicated fork-bot identity (an account with
+# deliberately no write access to pkg-example - see perform_fork_pr_check),
+# so PRs it opens get GitHub's genuine fork-PR treatment: a read-only,
+# secret-less token on the pull_request-triggered hook, and an empty
+# workflow_run.pull_requests[] on the reacting check.
+gh_fork_bot() {
+  GH_TOKEN="$FORK_BOT_TOKEN" gh "$@"
 }
 
 state_exists() {
@@ -369,6 +381,29 @@ patch_qli_ref_file() {
     "$file"
 }
 
+# Succeeds if file $3 at ref $2 of the clone at $1 pins every qli-ci
+# reusable workflow and qli-ci-ref to $4, as patch_qli_ref_file leaves it.
+qli_ref_pinned_in() {
+  local repo_dir="$1"
+  local ref="$2"
+  local file="$3"
+  local expected_ref="$4"
+
+  local content
+  if ! content="$(git -C "$repo_dir" show "${ref}:${file}" 2>/dev/null)"; then
+    log "${file} not found on ${ref}"
+    return 1
+  fi
+
+  local pins
+  pins="$(grep -oE "uses: qualcomm-linux/qli-ci/.github/workflows/[^@]+@[^[:space:]]+|qli-ci-ref:[[:space:]]*[^[:space:]]+" <<<"$content" \
+    | sed -E 's/.*(@|qli-ci-ref:[[:space:]]*)//' | sort -u)"
+  if [[ "$pins" != "$expected_ref" ]]; then
+    log "${file} on ${ref} is pinned to '${pins//$'\n'/ }', expected ${expected_ref}"
+    return 1
+  fi
+}
+
 # Populates the current (empty) working tree with pkg-example's default
 # branch content, sourced from this qli-ci checkout so it always reflects
 # the ref under test. Must be called from inside the pkg-example clone.
@@ -427,10 +462,13 @@ rebuild_debian_seed_tree() {
   chmod +x debian/rules
 
   if [[ "$lane" == "debusine" ]]; then
-    # Standalone debusine-*.yml set only. debusine-pr-hook.yml has no
-    # reusable-workflow call; debusine-release.yml calls qli-ci's
-    # debusine.yml and needs the ref patch.
+    # Standalone debusine-*.yml set only. debusine-pr-hook.yml calls qli-ci's
+    # debusine-source-package.yml and debusine-release.yml calls its
+    # debusine.yml, so both need the ref patch. Promotion and fork PRs branch
+    # off this tree, so the hook they run is already pinned to the ref under
+    # test and needs no per-PR sync-pr-hook step.
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-hook.yml" .github/workflows/debusine-pr-hook.yml
+    patch_qli_ref_file .github/workflows/debusine-pr-hook.yml
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
     patch_qli_ref_file .github/workflows/debusine-release.yml
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
@@ -465,11 +503,31 @@ perform_repo_reset() {
   fi
 
   # 2. Wipe all tags and ephemeral/packaging branches.
+  #
+  # Query the remote's live tag list directly instead of relying on the
+  # local clone's `git tag` (populated at clone time, in cmd_prepare_repo,
+  # well before this point) - a stale or racy local view here would leave
+  # tags behind on origin, which breaks pkg-promote's "upstream tag not
+  # already part of the repo" guard on a later promote-tag call. Retry a
+  # few times before giving up, in case a delete hasn't propagated yet.
   log "Wiping tags and qcom/*, qli-staging/*, upstream/latest, debian/pr/* branches"
-  local tag
-  for tag in $(git tag); do
-    git push origin --delete "$tag" >/dev/null 2>&1 || true
+  local remaining_tags attempt tag
+  for attempt in 1 2 3; do
+    for tag in $(git ls-remote --tags origin | awk '{print $2}' | grep -v '\^{}$' | sed 's#^refs/tags/##'); do
+      git push origin --delete "$tag" >/dev/null 2>&1 || true
+    done
+    remaining_tags="$(git ls-remote --tags origin | awk '{print $2}' | grep -v '\^{}$' | sed 's#^refs/tags/##')"
+    if [[ -z "$remaining_tags" ]]; then
+      break
+    fi
+    log "Tags still present on origin after wipe attempt ${attempt}/3: $(echo "$remaining_tags" | tr '\n' ' ')"
+    sleep 3
   done
+  if [[ -n "$remaining_tags" ]]; then
+    log "Failed to wipe all tags on origin after 3 attempts: $(echo "$remaining_tags" | tr '\n' ' ')"
+    return 1
+  fi
+  git tag -l | xargs -r git tag -d >/dev/null 2>&1 || true
 
   git push origin --delete upstream/latest >/dev/null 2>&1 || true
   local branch
@@ -848,6 +906,104 @@ merge_promotion_pr() {
   return 1
 }
 
+# Opens a genuine fork PR against $DEBIAN_SEED_BRANCH, authenticated as a
+# dedicated bot account that deliberately has no write access to
+# pkg-example, then waits for the Debusine CI commit status before closing
+# it. Unlike promote-tag's same-repo bot PR (which GitHub always treats as
+# trusted, since that bot has write access), this is the only path in the
+# loop that exercises the actual condition debusine-pr-check.yml's
+# resolve-pr job must handle: workflow_run.pull_requests[] is empty because
+# the PR's head repo differs from its base repo and its author lacks write
+# access. Must be called from inside the pkg-example clone (repo_dir), with
+# origin/$DEBIAN_SEED_BRANCH present.
+#
+# Only echoes the final PR URL to stdout on success; all progress goes to
+# stderr via log(), so callers can capture the URL with a bare $(...).
+perform_fork_pr_check() {
+  local target_branch="$DEBIAN_SEED_BRANCH"
+  local start_ref="origin/${target_branch}"
+
+  if [[ -z "$FORK_BOT_TOKEN" || -z "$FORK_BOT_USER" || -z "$FORK_BOT_REPO_NAME" ]]; then
+    log "FORK_BOT_TOKEN, FORK_BOT_USER, and FORK_BOT_REPO_NAME must all be set to run the fork PR check"
+    return 1
+  fi
+
+  local fork_repo="${FORK_BOT_USER}/${FORK_BOT_REPO_NAME}"
+  if ! gh_fork_bot api "repos/${fork_repo}" >/dev/null 2>&1; then
+    log "Fork ${fork_repo} is not reachable with FORK_BOT_TOKEN; confirm it exists and the token can access it"
+    return 1
+  fi
+
+  log "Using fork ${fork_repo} for the fork PR check"
+
+  git remote remove fork >/dev/null 2>&1 || true
+  git remote add fork "https://x-access-token:${FORK_BOT_TOKEN}@github.com/${fork_repo}.git"
+
+  local branch="fork-pr-check-${RUN_ID_FALLBACK}-$(date +%s)"
+  local checkout_output
+  if ! checkout_output="$(git checkout -b "$branch" "$start_ref" 2>&1)"; then
+    log "Failed to create branch ${branch} off ${start_ref}: ${checkout_output}"
+    return 1
+  fi
+
+  # A PR needs a diff and each run a fresh head SHA. Keep the change inside
+  # debian/: anything outside it is an unrecorded upstream change for a
+  # 3.0 (quilt) package and dpkg-source refuses to build.
+  echo "# fork PR check: run ${RUN_ID_FALLBACK} at $(iso_now)" >> debian/copyright
+  git add debian/copyright
+  local commit_output
+  if ! commit_output="$(git -c user.name="pkg-example fork bot" -c user.email="${FORK_BOT_USER}@users.noreply.github.com" \
+      commit -s -m "test: fork PR check dummy change" 2>&1)"; then
+    log "Failed to commit fork PR check change: ${commit_output}"
+    git checkout "$PKG_BASE_REF" >/dev/null 2>&1 || true
+    return 1
+  fi
+
+  local head_sha
+  head_sha="$(git rev-parse HEAD)"
+
+  local push_output
+  if ! push_output="$(git push fork "${branch}:${branch}" --force 2>&1)"; then
+    log "Failed to push ${branch} to fork ${fork_repo}: ${push_output}"
+    git checkout "$PKG_BASE_REF" >/dev/null 2>&1 || true
+    return 1
+  fi
+
+  log "Opening fork PR from ${FORK_BOT_USER}:${branch} against ${PKG_REPO}:${target_branch}"
+  local pr_url
+  if ! pr_url="$(gh_fork_bot pr create -R "$PKG_REPO" \
+      --base "$target_branch" \
+      --head "${FORK_BOT_USER}:${branch}" \
+      --title "test: fork PR check smoke test (run ${RUN_ID_FALLBACK})" \
+      --body "Disposable PR opened by the qli-ci pkg-example e2e loop to exercise the real fork-PR path of debusine-pr-check.yml (workflow_run.pull_requests[] empty, read-only token, no secrets). Safe to ignore; closed automatically once Debusine CI reports a status." \
+      2>&1)"; then
+    log "Failed to open fork PR: ${pr_url}"
+    git checkout "$PKG_BASE_REF" >/dev/null 2>&1 || true
+    return 1
+  fi
+  local pr_number="${pr_url##*/}"
+  log "Opened fork PR ${pr_url} (head SHA ${head_sha})"
+
+  local check_rc=0
+  wait_for_debusine_check "$head_sha" || check_rc=$?
+
+  log "Closing fork PR #${pr_number}"
+  gh_fork_bot pr close "$pr_number" -R "$PKG_REPO" >/dev/null 2>&1 || \
+    log "Failed to close fork PR #${pr_number} (continuing)"
+  git push fork --delete "$branch" >/dev/null 2>&1 || \
+    log "Failed to delete fork branch ${branch} (continuing)"
+
+  git checkout "$PKG_BASE_REF" >/dev/null 2>&1 || true
+  git branch -D "$branch" >/dev/null 2>&1 || true
+
+  if [[ "$check_rc" -ne 0 ]]; then
+    return 1
+  fi
+
+  echo "$pr_url"
+  return 0
+}
+
 cmd_init() {
   require_cmd jq
   require_cmd gh
@@ -890,6 +1046,9 @@ cmd_init() {
         repo_dir: ""
       },
       lanes: {
+        "fork-pr-check": {
+          fork_pr_check: {status: "skipped", url: ""}
+        },
         debusine: {
           reset: {status: "skipped", url: ""},
           seed: {status: "n/a", url: ""},
@@ -974,10 +1133,6 @@ cmd_prepare_repo() {
   ensure_state
 
   if [[ "$(state_get '.meta.skip')" == "true" ]]; then
-    return 0
-  fi
-
-  if [[ "$(state_get '.meta.enable_debian')" != "true" && "$(state_get '.meta.enable_ubuntu')" != "true" && "$(state_get '.meta.enable_debusine')" != "true" ]]; then
     return 0
   fi
 
@@ -1380,9 +1535,9 @@ cmd_wait_pr_build() {
   return 1
 }
 
-# Debusine lane equivalent of cmd_wait_pr_build: there is no PR-hook ref to
-# patch or dispatched run to watch here (debusine-pr-hook.yml does not
-# reference qli-ci at all), so this gates directly on "promote" and records
+# Debusine lane equivalent of cmd_wait_pr_build: there is no dispatched run to
+# watch here, and no PR-hook ref to re-patch (reset already pinned
+# debusine-pr-hook.yml on qcom/debian/latest), so this gates directly on "promote" and records
 # its result in the "prbuild" phase, keeping merge/release gating identical
 # across lanes.
 cmd_wait_debusine_check() {
@@ -1422,6 +1577,58 @@ cmd_wait_debusine_check() {
 
   set_tag_phase "$lane" "$tag" "prbuild" "failure" "$pr_url"
   mark_overall_failure "Debusine CI check failed for ${lane} ${tag}"
+  return 1
+}
+
+# Standalone job, run once per e2e run against $DEBIAN_SEED_BRANCH as the
+# debusine lane (or an earlier run) left it: a smoke test of the real fork-PR
+# path, distinct from the debusine lane's same-repo promotion PRs.
+cmd_fork_pr_check() {
+  ensure_state
+
+  if [[ "$(state_get '.meta.skip')" == "true" ]]; then
+    set_lane_phase "fork-pr-check" "fork_pr_check" "skipped" ""
+    return 0
+  fi
+
+  local repo_dir
+  repo_dir="$(state_get '.meta.repo_dir')"
+  if [[ -z "$repo_dir" || ! -d "$repo_dir" ]]; then
+    set_lane_phase "fork-pr-check" "fork_pr_check" "failure" ""
+    mark_overall_failure "Missing local repo clone during fork PR check"
+    return 1
+  fi
+
+  if ! git -C "$repo_dir" rev-parse --verify --quiet "origin/${DEBIAN_SEED_BRANCH}" >/dev/null; then
+    set_lane_phase "fork-pr-check" "fork_pr_check" "failure" ""
+    mark_overall_failure "${DEBIAN_SEED_BRANCH} branch not found in pkg-example"
+    return 1
+  fi
+
+  # The fork PR runs the hook from its base branch and the check from the
+  # default branch, so both must have been seeded with the qli-ci ref under
+  # test. Otherwise (debusine lane disabled, or failed before its reset) this
+  # would test whatever qli-ci commit the last run left there. Read the ref
+  # under test from the state init recorded: this step's environment does
+  # not carry QLI_CI_REF.
+  local qli_ci_ref
+  qli_ci_ref="$(state_get '.meta.qli_ci_ref')"
+  if [[ -z "$qli_ci_ref" ]] || \
+     ! qli_ref_pinned_in "$repo_dir" "origin/${DEBIAN_SEED_BRANCH}" .github/workflows/debusine-pr-hook.yml "$qli_ci_ref" || \
+     ! qli_ref_pinned_in "$repo_dir" "origin/${PKG_BASE_REF}" .github/workflows/debusine-pr-check.yml "$qli_ci_ref"; then
+    set_lane_phase "fork-pr-check" "fork_pr_check" "failure" ""
+    mark_overall_failure "Fork PR check: pkg-example was not seeded with qli-ci ref '${qli_ci_ref}' by this run"
+    return 1
+  fi
+
+  local pr_url=""
+  if pr_url="$(cd "$repo_dir" && perform_fork_pr_check)"; then
+    set_lane_phase "fork-pr-check" "fork_pr_check" "success" "$pr_url"
+    return 0
+  fi
+
+  set_lane_phase "fork-pr-check" "fork_pr_check" "failure" ""
+  mark_overall_failure "Fork PR check failed"
   return 1
 }
 
@@ -1640,6 +1847,27 @@ clear_release_epoch() {
   )
 }
 
+# Prints the conclusion of the first job in run $1 whose name matches the jq
+# test expression $2 (applied to the job name), or an empty string if there
+# is none. GitHub can report a run as completed a moment before the
+# conclusion of its last job is filled in, so an empty conclusion is
+# re-read for up to about 30 seconds before it is returned.
+run_job_conclusion() {
+  local run_id="$1"
+  local name_test="$2"
+
+  local conclusion attempt
+  for attempt in $(seq 1 10); do
+    conclusion="$(gh_bot run view "$run_id" -R "$PKG_REPO" --json jobs \
+      --jq "[.jobs[] | select(.name | ${name_test}) | .conclusion] | first // \"\"" 2>/dev/null || true)"
+    if [[ -n "$conclusion" ]]; then
+      break
+    fi
+    sleep 3
+  done
+  printf '%s\n' "$conclusion"
+}
+
 # Checks that a successful debusine-release.yml run really released: its
 # Release job ran (rather than being skipped), and lib/push-release left the
 # release tag and the follow-up "open" commit on the packaging branch. The
@@ -1650,8 +1878,7 @@ verify_debusine_release() {
   local branch="$2"
 
   local release_job_conclusion
-  release_job_conclusion="$(gh_bot run view "$run_id" -R "$PKG_REPO" --json jobs \
-    --jq '[.jobs[] | select(.name | endswith("/ Release")) | .conclusion] | first // ""')"
+  release_job_conclusion="$(run_job_conclusion "$run_id" 'endswith("/ Release")')"
   if [[ "$release_job_conclusion" != "success" ]]; then
     log "Release job of run ${run_id} concluded '${release_job_conclusion:-missing}', expected 'success'"
     return 1
@@ -1718,9 +1945,11 @@ cmd_daily_check() {
   fi
 
   local build_conclusion
-  build_conclusion="$(gh_bot run view "$LAST_RUN_ID" -R "$PKG_REPO" --json jobs \
-    | jq -r --arg prefix "Debusine (${lane_branch}) / Build" \
-      '[.jobs[] | select(.name | startswith($prefix)) | .conclusion] | first // ""')"
+  # Match the Debusine build job itself: since debusine.yml calls nested
+  # workflows, "Debusine (<branch>) / Build / ..." also covers the resolve
+  # and validate jobs listed before it.
+  build_conclusion="$(run_job_conclusion "$LAST_RUN_ID" \
+    "startswith(\"Debusine (${lane_branch}) / \") and endswith(\"/ Build in Debusine\")")"
   if [[ "$build_conclusion" != "success" ]]; then
     log "debusine-daily.yml build job for ${lane_branch} concluded '${build_conclusion:-missing}', expected 'success'"
     set_lane_phase "$lane" "daily" "failure" "$LAST_RUN_URL"
@@ -1882,7 +2111,7 @@ cmd_write_summary() {
 
     echo
     echo "- Debusine Daily: $(format_cell "$(state_get '.lanes["debusine"].daily.status // "skipped"')" "$(state_get '.lanes["debusine"].daily.url // ""')")"
-
+    echo "- fork PR check: $(format_cell "$(state_get '.lanes["fork-pr-check"].fork_pr_check.status')" "$(state_get '.lanes["fork-pr-check"].fork_pr_check.url')")"
     echo
     echo "Generated: $(iso_now)"
   } > "$SUMMARY_FILE"
@@ -1965,6 +2194,7 @@ Usage:
   $0 sync-pr-hook <debian|ubuntu> <tag>
   $0 wait-pr-build <debian|ubuntu> <tag>
   $0 wait-debusine-check <debusine> <tag>
+  $0 fork-pr-check
   $0 merge-pr <debian|ubuntu|debusine> <tag>
   $0 release-tag <debian|ubuntu|debusine> <tag>
   $0 daily-check <debusine>
@@ -2011,6 +2241,9 @@ main() {
     wait-debusine-check)
       shift
       cmd_wait_debusine_check "${1:-}" "${2:-}"
+      ;;
+    fork-pr-check)
+      cmd_fork_pr_check
       ;;
     merge-pr)
       shift

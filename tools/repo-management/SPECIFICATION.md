@@ -1,7 +1,7 @@
 # Repository Configuration Specification
 
 This document specifies the required configuration state of a production
-`qualcomm-linux/pkg-*` GitHub repository for Debusine workflows to
+`qualcomm-linux/pkg-*` GitHub repository for QLI CI workflows to
 function correctly. It covers repository state only; tooling used to
 achieve or verify that state is not in scope. See README.md for details
 of that.
@@ -190,26 +190,54 @@ No environment secret is required in `Axiom` at this time.
 ## Workflow Files
 
 Workflow files must be present and be duplicates of the corresponding
-files that are in `pkg-workflows/debusine/` in the main branch
-of the qualcomm-linux/qli-ci repository as follows:
+files that are in `pkg-workflows/` in the main branch of the
+qualcomm-linux/qli-ci repository as follows. Each file is listed by its
+path relative to `pkg-workflows/` and must be present in
+`.github/workflows/` under its file name (for example,
+`debusine/debusine-daily.yml` must be present as
+`.github/workflows/debusine-daily.yml`).
+
+Workflow files that were deployed by earlier versions of this tooling,
+or by its predecessors, must not be present in `.github/workflows/`, as
+specified for each branch below. The following legacy files must not be
+present in any managed branch:
+
+| File                       |
+|----------------------------|
+| `build-debian-package.yml` |
+| `pr-pre-post-merge.yml`    |
+| `promote-prebuilt.yml`     |
+| `promote-upstream.yml`     |
+| `release.yml`              |
+| `workflows_sync.yml`       |
+
+Other files in `.github/workflows/` are not managed.
 
 ### Default Branch
 
 The default branch must be named `qli-ci` and contain the following in
 `.github/workflows/`:
 
-| File                    |
-|-------------------------|
-| `debusine-daily.yml`    |
-| `debusine-pr-check.yml` |
-| `debusine-pr-hook.yml`  |
-| `debusine-release.yml`  |
-| `README.debusine.md`    |
+| File                               |
+|------------------------------------|
+| `debusine/debusine-daily.yml`      |
+| `debusine/debusine-pr-check.yml`   |
+| `debusine/debusine-pr-hook.yml`    |
+| `debusine/debusine-release.yml`    |
+| `debusine/README.debusine.md`      |
+| `qli-ci/pkg-build.yml`             |
+| `qli-ci/pkg-pr-hook.yml`           |
+| `qli-ci/pkg-promote-prebuilt.yml`  |
+| `qli-ci/pkg-promote.yml`           |
+| `qli-ci/pkg-release.yml`           |
 
-### Each Packaging Branch
+Apart from the legacy files above, no files are required to be absent.
 
-The following packaging branches are managed. They do not need to exist,
-but if they do, they must contain the following in `.github/workflows/`:
+### Each Debian Packaging Branch
+
+The following Debian packaging branches are managed. They do not need to
+exist, but if they do, they must contain the following in
+`.github/workflows/`:
 
 - `qcom/debian/trixie`
 - `qcom/debian/latest`
@@ -218,10 +246,49 @@ but if they do, they must contain the following in `.github/workflows/`:
 - `qli-staging/debian/trixie`
 - `qli-staging/debian/latest`
 
-| File                    |
-|-------------------------|
-| `debusine-pr-hook.yml`  |
-| `debusine-release.yml`  |
-| `README.debusine.md`    |
+| File                            |
+|---------------------------------|
+| `debusine/debusine-pr-hook.yml` |
+| `debusine/debusine-release.yml` |
+| `debusine/README.debusine.md`   |
+
+In addition to the legacy files above, the following must not be
+present in `.github/workflows/`:
+
+| File                       |
+|----------------------------|
+| `debusine-daily.yml`       |
+| `debusine-pr-check.yml`    |
+| `pkg-build.yml`            |
+| `pkg-pr-hook.yml`          |
+| `pkg-promote-prebuilt.yml` |
+| `pkg-promote.yml`          |
+| `pkg-release.yml`          |
+
+### Each Ubuntu Packaging Branch
+
+Every branch named `qcom/ubuntu/<codename>`, where `<codename>` does not
+contain `/`, is a managed Ubuntu packaging branch. Such branches do not
+need to exist, but if they do, they must contain the following in
+`.github/workflows/`:
+
+| File                     |
+|--------------------------|
+| `debian/pkg-pr-hook.yml` |
+
+In addition to the legacy files above, the following must not be
+present in `.github/workflows/`:
+
+| File                       |
+|----------------------------|
+| `debusine-daily.yml`       |
+| `debusine-pr-check.yml`    |
+| `debusine-pr-hook.yml`     |
+| `debusine-release.yml`     |
+| `README.debusine.md`       |
+| `pkg-build.yml`            |
+| `pkg-promote-prebuilt.yml` |
+| `pkg-promote.yml`          |
+| `pkg-release.yml`          |
 
 No other packaging branches are managed.

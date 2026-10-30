@@ -10,7 +10,14 @@ The packaging workflows do not talk to Debusine directly: they call the reusable
 
 Testing Debusine itself is out of scope: Debusine has its own test suite, and bugs or regressions in the upstream software are not what these tests are for. The focus is on configuration and deployment properties that could diverge from our requirements — for example, access controls, workspace topology, suite and component names, and repository visibility.
 
-The test suite currently runs under a single Debusine principal and therefore does not cover authorisation or permission behaviour across multiple principals (for example, whether a token with build-only permissions is correctly prevented from publishing, or vice versa).
+The test suite drives three distinct Debusine service users, one per task, and
+verifies both that each user can perform its own task and that the other two
+users are correctly prevented from performing it:
+
+- **Build user** — creates a child workspace under `qli-ci`, uploads the source
+  package, and builds it in that child workspace.
+- **Staging release user** — releases built packages to `qli-staging`.
+- **Production release user** — releases built packages to `qli`.
 
 ## What is tested
 
@@ -46,6 +53,23 @@ For each debian build result × target workspace (`qli`, `qli-staging`):
    - Lists the published package in `Packages.xz`.
    - Serves the `.deb` file.
 
+### Permissions (`-m permissions`)
+
+Verifies the authorisation boundary between the three service users. The release
+rights differ per user, but all three share the `qli-ci` child-workspace
+operations:
+
+- **Create child workspace under `qli-ci`** — allowed to the build user and to
+  both release users. (The build user's grant is covered by the build phase;
+  this phase asserts each release user is also permitted.)
+- **Release to `qli-staging`** — denied to the build user and the production
+  release user.
+- **Release to `qli`** — denied to the build user and the staging release user.
+
+Each check is resolved synchronously by `workflow_create`; no build or publish
+workflow is run. The release cases reuse the shared build results (debian only),
+so this phase adds no extra builds.
+
 ## Dependencies
 
 The tests run inside a `debusine-pkg-builder` container or any host with:
@@ -56,15 +80,17 @@ The tests run inside a `debusine-pkg-builder` container or any host with:
 
 ## Credentials
 
-You need three API tokens from your Debusine account (top-right → Tokens):
+You need three API tokens, one per service user (top-right → Tokens):
 
-| Variable | Used for |
-|---|---|
-| `DEBUSINE_TOKEN` | Read/write on `qli-ci` and child workspaces (build token) |
-| `DEBUSINE_PRODUCTION_RELEASE_TOKEN` | Write to `qli` (used for publish tests targeting `qli`) |
-| `DEBUSINE_STAGING_RELEASE_TOKEN` | Write to `qli-staging` (used for publish tests targeting `qli-staging`) |
+| Variable | Service user | Used for |
+|---|---|---|
+| `DEBUSINE_TOKEN` | Build | Read/write on `qli-ci` and child workspaces (create child workspace, upload, build) |
+| `DEBUSINE_STAGING_RELEASE_TOKEN` | Staging release | Write to `qli-staging` (publish tests targeting `qli-staging`) |
+| `DEBUSINE_PRODUCTION_RELEASE_TOKEN` | Production release | Write to `qli` (publish tests targeting `qli`) |
 
-The build token needs permission to create child workspaces under `qli-ci` and to run `debian_pipeline` workflows. The release tokens need permission to run `package-publish` in their respective target workspaces.
+The build token needs permission to create child workspaces under `qli-ci` and to run `debian_pipeline` workflows. Each release token needs permission to run `package-publish` in its own target workspace — and, mirroring production `lib/release`, **read** access to the child workspaces under `qli-ci` so it can resolve the suite collection to publish from.
+
+`DEBUSINE_USER` is the **build** user's APT/basic-auth username. It is the only username the suite needs: it is used solely for the two HTTP Basic reads the build user performs (fetching the build signing key and reading the child workspace's APT repository). The release users are token-only, and the released target repositories are verified over unauthenticated (public) APT.
 
 ## Running the tests
 
@@ -92,6 +118,11 @@ py.test-3 -m build .
 Run only the publish phase:
 ```sh
 py.test-3 -m publish .
+```
+
+Run only the permissions phase:
+```sh
+py.test-3 -m permissions .
 ```
 
 Run only one suite:

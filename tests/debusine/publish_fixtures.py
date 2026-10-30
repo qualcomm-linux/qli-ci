@@ -39,9 +39,15 @@ def publish_result(creds, release_token, build_result, target_workspace):
     )
     release_client = make_client(host, release_token, scope, logger)
 
+    # Read the child CI workspace's suite collection with the *release* client,
+    # not the build client. Production lib/release performs this lookup under the
+    # release token (debusine collection list -w $DEBUSINE_CI_WORKSPACE), so the
+    # release user must be able to read child workspaces under qli-ci. Using the
+    # release client here exercises that permission exactly as production relies
+    # on it.
     suite_collection = next(
         (
-            c for c in build_result["client"].collection_iter(build_result["workspace"])
+            c for c in release_client.collection_iter(build_result["workspace"])
             if c.category == CollectionCategory.SUITE and c.name == suite
         ),
         None,

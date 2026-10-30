@@ -84,8 +84,30 @@ def target_workspace(request):
 
 
 # ---------------------------------------------------------------------------
-# Credential fixtures
+# Service users
 # ---------------------------------------------------------------------------
+
+# The suite drives three distinct Debusine service users, each performing one
+# task and holding its own API token:
+#
+#   build       -> creates the child workspace under qli-ci, uploads the source
+#                  package and builds it in the child workspace.
+#   qli-staging -> releases built packages to the qli-staging workspace.
+#   qli         -> releases built packages to the qli workspace.
+#
+# The release roles are keyed by their target workspace name so that fixtures
+# parametrized over target_workspace can look their token up directly.
+SERVICE_TOKEN_ENV = {
+    "build": "DEBUSINE_TOKEN",
+    "qli-staging": "DEBUSINE_STAGING_RELEASE_TOKEN",
+    "qli": "DEBUSINE_PRODUCTION_RELEASE_TOKEN",
+}
+
+
+@pytest.fixture(scope="session")
+def service_tokens():
+    """Map each service-user role to its API token."""
+    return {role: os.environ[var] for role, var in SERVICE_TOKEN_ENV.items()}
 
 
 @pytest.fixture(scope="session")
@@ -100,7 +122,5 @@ def creds():
 
 
 @pytest.fixture(scope="session")
-def release_token(target_workspace):
-    if target_workspace == "qli":
-        return os.environ["DEBUSINE_PRODUCTION_RELEASE_TOKEN"]
-    return os.environ["DEBUSINE_STAGING_RELEASE_TOKEN"]
+def release_token(service_tokens, target_workspace):
+    return service_tokens[target_workspace]

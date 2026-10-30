@@ -1,0 +1,129 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# Release half of Debusine CI: publish a package that debusine-build.yml built
+# from its CI child workspace into the target Debusine workspace, then push the
+# release commit and tag that debusine-source-package.yml prepared (the
+# release-bundle-<job_index> artifact) back to the packaging branch.
+#
+# This is the only Debusine CI workflow that needs write permissions or
+# DEBUSINE_RELEASE_TOKEN. Only the trusted release path calls it
+# (debusine.yml with release: true); PR CI never does.
+
+name: Debusine publish
+
+on:
+  workflow_call:
+    inputs:
+      target_branch:
+        description: Packaging branch being released
+        type: string
+        required: true
+      source_ref:
+        description: Ref the release was prepared from; push-release pushes on top of it
+        type: string
+        required: true
+      qli-ci-ref:
+        description: Ref of qualcomm-linux/qli-ci to check out for helper scripts
+        type: string
+        required: false
+        default: main
+      job_index:
+        description: Must match the job_index passed to debusine-source-package.yml and debusine-build.yml
+        type: string
+        required: false
+        default: "0"
+      ci_workspace:
+        description: Debusine CI child workspace holding the build (debusine-build.yml's workspace output)
+        type: string
+        required: true
+      srcpkg_name:
+        description: Source package name (debusine-build.yml's srcpkg_name output)
+        type: string
+        required: true
+      srcpkg_version:
+        description: Source package version (debusine-build.yml's srcpkg_version output)
+        type: string
+        required: true
+    secrets:
+      DEBUSINE_RELEASE_TOKEN:
+        required: true
+
+permissions: {}
+
+jobs:
+  resolve:
+    name: Resolve target branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      suite: ${{ steps.resolve.outputs.suite }}
+      debusine_target_workspace: ${{ steps.resolve.outputs.debusine_target_workspace }}
+      package_version_identifier: ${{ steps.resolve.outputs.package_version_identifier }}
+      environment: ${{ steps.resolve.outputs.environment }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          path: qli-ci
+          persist-credentials: false
+      - id: resolve
+        name: Map branch to suite
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+        run: qli-ci/lib/resolve-target-branch
+
+  release:
+    name: Release
+    needs: resolve
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/qualcomm-linux/debusine-pkg-builder:trixie
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
+    environment: ${{ needs.resolve.outputs.environment }}
+    permissions:
+      contents: write
+      deployments: write
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Using the parent directory for Debian build artifacts is problematic, for example breaking actions/upload-artifact:
+          # https://github.com/actions/upload-artifact/issues/176
+          path: srcpkg
+          ref: ${{ inputs.source_ref }}
+          # Keep credentials: qli-ci/lib/push-release pushes the release
+          # commit and tag back to origin without re-authenticating. srcpkg/
+          # is never uploaded as an artifact.
+          persist-credentials: true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          path: qli-ci
+          persist-credentials: false
+      - name: Download release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-bundle-${{ inputs.job_index }}
+          path: .
+      - name: Release
+        env:
+          DEBUSINE_HOST: ${{ vars.DEBUSINE_HOST }}
+          DEBUSINE_SCOPE: ${{ vars.DEBUSINE_SCOPE }}
+          DEBUSINE_TOKEN: ${{ secrets.DEBUSINE_RELEASE_TOKEN }}
+          DEBUSINE_CI_WORKSPACE: ${{ inputs.ci_workspace }}
+          DEBUSINE_TARGET_WORKSPACE: ${{ needs.resolve.outputs.debusine_target_workspace }}
+          PACKAGE_VERSION_IDENTIFIER: ${{ needs.resolve.outputs.package_version_identifier }}
+          SRCPKG_NAME: ${{ inputs.srcpkg_name }}
+          SRCPKG_VERSION: ${{ inputs.srcpkg_version }}
+          SUITE: ${{ needs.resolve.outputs.suite }}
+        run: |
+          set -ex
+          qli-ci/lib/release
+          qli-ci/lib/push-release

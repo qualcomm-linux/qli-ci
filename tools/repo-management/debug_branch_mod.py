@@ -17,8 +17,13 @@ from pathlib import Path
 
 import ruamel.yaml
 
-DEBUSINE_USES_PREFIX = "qualcomm-linux/qli-ci/.github/workflows/debusine.yml@"
-DEBUSINE_USES_MAIN = DEBUSINE_USES_PREFIX + "main"
+# The Debusine reusable workflows the stubs call: debusine.yml (daily,
+# release), debusine-build.yml (PR check) and debusine-source-package.yml
+# (PR hook).
+DEBUSINE_USES_PREFIXES = tuple(
+    f"qualcomm-linux/qli-ci/.github/workflows/{name}@"
+    for name in ("debusine.yml", "debusine-build.yml", "debusine-source-package.yml")
+)
 
 
 def modify_workflow_files(directory: Path, branch: str) -> None:
@@ -38,17 +43,21 @@ def modify_workflow_files(directory: Path, branch: str) -> None:
             if not isinstance(job, dict):
                 continue
             uses = job.get("uses", "")
-            if isinstance(uses, str) and uses.startswith(DEBUSINE_USES_PREFIX):
-                if uses != DEBUSINE_USES_MAIN:
+            prefix = next(
+                (p for p in DEBUSINE_USES_PREFIXES if isinstance(uses, str) and uses.startswith(p)),
+                None,
+            )
+            if prefix:
+                if uses != prefix + "main":
                     raise ValueError(
                         f"{path}: unexpected ref in uses: {uses!r} (expected @main)"
                     )
                 with_block = job.get("with")
                 if not isinstance(with_block, dict) or with_block.get("qli-ci-ref") != "main":
                     raise ValueError(
-                        f"{path}: qli-ci-ref must be 'main' when uses is {DEBUSINE_USES_MAIN!r}"
+                        f"{path}: qli-ci-ref must be 'main' when uses is {uses!r}"
                     )
-                job["uses"] = DEBUSINE_USES_PREFIX + branch
+                job["uses"] = prefix + branch
                 with_block["qli-ci-ref"] = branch
                 modified = True
         if modified:

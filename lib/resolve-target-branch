@@ -1,0 +1,75 @@
+#!/bin/bash
+set -e
+set -o pipefail
+
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# Map a Debusine packaging branch to its suite, Debusine workspace, version
+# identifier and GitHub environment, and pick the packaging ref to check out.
+# This is the single copy of the branch map shared by debusine-source-package.yml,
+# debusine-build.yml and debusine-publish.yml. Keep it in sync with the
+# check-branches candidates in pkg-workflows/debusine/debusine-daily.yml.
+#
+# TARGET_BRANCH may be chosen by an untrusted PR author (the base branch of a
+# fork PR), so only exact known values are accepted.
+
+# Inputs:
+#     $TARGET_BRANCH: where the packaging will land (or for dailies, has landed)
+#     $SOURCE_REF (optional): explicit packaging ref to check out
+#     $PR_HEAD_SHA (optional): PR head commit, used if $SOURCE_REF is empty
+#     $GITHUB_REF: fallback if both of the above are empty
+# Outputs:
+#     $GITHUB_OUTPUT (append): suite, debusine_target_workspace,
+#         package_version_identifier, environment, extra_build_dep_workspaces,
+#         source_ref
+
+: ${GITHUB_OUTPUT:=/dev/null}
+
+case "$TARGET_BRANCH" in
+    qli-staging/*)
+        prefix=qli-staging/
+        workspace=qli-staging
+        identifier=qli+staging
+        environment=Staging
+        extra_build_dep_workspaces="qli qli-staging"
+        ;;
+    qli/*|qcom/*)
+        # qcom/ is transitional and maps exactly like qli/.
+        prefix="${TARGET_BRANCH%%/*}/"
+        workspace=qli
+        identifier=qli
+        environment=Production
+        extra_build_dep_workspaces=qli
+        ;;
+    *)
+        echo "Unknown target branch prefix: $TARGET_BRANCH. Branch must start with one of: qli-staging/, qli/, qcom/" >&2
+        exit 1
+        ;;
+esac
+
+# suite is also the ghcr.io/qualcomm-linux/debusine-pkg-builder image tag the
+# source-package job runs in, so a new suite needs a matching image tag.
+case "${TARGET_BRANCH#"$prefix"}" in
+    debian/latest) suite=forky ;;
+    debian/trixie) suite=trixie ;;
+    *)
+        echo "Unknown branch suffix in $TARGET_BRANCH. Valid suffixes are: debian/latest, debian/trixie" >&2
+        exit 1
+        ;;
+esac
+
+# PR: use the head SHA, not refs/pull/*/merge. Otherwise push,
+# workflow_dispatch and schedule build github.ref.
+source_ref="${SOURCE_REF:-${PR_HEAD_SHA:-$GITHUB_REF}}"
+
+cat >> "$GITHUB_OUTPUT" <<END
+suite=$suite
+debusine_target_workspace=$workspace
+package_version_identifier=$identifier
+environment=$environment
+extra_build_dep_workspaces=$extra_build_dep_workspaces
+source_ref=$source_ref
+END
+
+echo "Mapped branch '$TARGET_BRANCH' to suite '$suite', workspace '$workspace', identifier '$identifier', environment '$environment'; using source_ref '$source_ref'"

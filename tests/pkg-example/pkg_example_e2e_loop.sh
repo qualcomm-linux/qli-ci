@@ -427,10 +427,13 @@ rebuild_debian_seed_tree() {
   chmod +x debian/rules
 
   if [[ "$lane" == "debusine" ]]; then
-    # Standalone debusine-*.yml set only. debusine-pr-hook.yml has no
-    # reusable-workflow call; debusine-release.yml calls qli-ci's
-    # debusine.yml and needs the ref patch.
+    # Standalone debusine-*.yml set only. debusine-pr-hook.yml calls qli-ci's
+    # debusine-source-package.yml and debusine-release.yml calls its
+    # debusine.yml, so both need the ref patch. Promotion and fork PRs branch
+    # off this tree, so the hook they run is already pinned to the ref under
+    # test and needs no per-PR sync-pr-hook step.
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-hook.yml" .github/workflows/debusine-pr-hook.yml
+    patch_qli_ref_file .github/workflows/debusine-pr-hook.yml
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
     patch_qli_ref_file .github/workflows/debusine-release.yml
     cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
@@ -1400,9 +1403,9 @@ cmd_wait_pr_build() {
   return 1
 }
 
-# Debusine lane equivalent of cmd_wait_pr_build: there is no PR-hook ref to
-# patch or dispatched run to watch here (debusine-pr-hook.yml does not
-# reference qli-ci at all), so this gates directly on "promote" and records
+# Debusine lane equivalent of cmd_wait_pr_build: there is no dispatched run to
+# watch here, and no PR-hook ref to re-patch (reset already pinned
+# debusine-pr-hook.yml on qcom/debian/latest), so this gates directly on "promote" and records
 # its result in the "prbuild" phase, keeping merge/release gating identical
 # across lanes.
 cmd_wait_debusine_check() {
@@ -1660,6 +1663,27 @@ clear_release_epoch() {
   )
 }
 
+# Prints the conclusion of the first job in run $1 whose name matches the jq
+# test expression $2 (applied to the job name), or an empty string if there
+# is none. GitHub can report a run as completed a moment before the
+# conclusion of its last job is filled in, so an empty conclusion is
+# re-read for up to about 30 seconds before it is returned.
+run_job_conclusion() {
+  local run_id="$1"
+  local name_test="$2"
+
+  local conclusion attempt
+  for attempt in $(seq 1 10); do
+    conclusion="$(gh_bot run view "$run_id" -R "$PKG_REPO" --json jobs \
+      --jq "[.jobs[] | select(.name | ${name_test}) | .conclusion] | first // \"\"" 2>/dev/null || true)"
+    if [[ -n "$conclusion" ]]; then
+      break
+    fi
+    sleep 3
+  done
+  printf '%s\n' "$conclusion"
+}
+
 # Checks that a successful debusine-release.yml run really released: its
 # Release job ran (rather than being skipped), and lib/push-release left the
 # release tag and the follow-up "open" commit on the packaging branch. The
@@ -1670,8 +1694,7 @@ verify_debusine_release() {
   local branch="$2"
 
   local release_job_conclusion
-  release_job_conclusion="$(gh_bot run view "$run_id" -R "$PKG_REPO" --json jobs \
-    --jq '[.jobs[] | select(.name | endswith("/ Release")) | .conclusion] | first // ""')"
+  release_job_conclusion="$(run_job_conclusion "$run_id" 'endswith("/ Release")')"
   if [[ "$release_job_conclusion" != "success" ]]; then
     log "Release job of run ${run_id} concluded '${release_job_conclusion:-missing}', expected 'success'"
     return 1
@@ -1738,9 +1761,11 @@ cmd_daily_check() {
   fi
 
   local build_conclusion
-  build_conclusion="$(gh_bot run view "$LAST_RUN_ID" -R "$PKG_REPO" --json jobs \
-    | jq -r --arg prefix "Debusine (${lane_branch}) / Build" \
-      '[.jobs[] | select(.name | startswith($prefix)) | .conclusion] | first // ""')"
+  # Match the Debusine build job itself: since debusine.yml calls nested
+  # workflows, "Debusine (<branch>) / Build / ..." also covers the resolve
+  # and validate jobs listed before it.
+  build_conclusion="$(run_job_conclusion "$LAST_RUN_ID" \
+    "startswith(\"Debusine (${lane_branch}) / \") and endswith(\"/ Build in Debusine\")")"
   if [[ "$build_conclusion" != "success" ]]; then
     log "debusine-daily.yml build job for ${lane_branch} concluded '${build_conclusion:-missing}', expected 'success'"
     set_lane_phase "$lane" "daily" "failure" "$LAST_RUN_URL"

@@ -267,8 +267,9 @@ When `update-workflow-files` is invoked with `--debug-source-branch
 sourced workflow files are modified before being deployed or compared:
 
 - Every `uses:
-  qualcomm-linux/qli-ci/.github/workflows/debusine.yml@main`
-  value is rewritten to `@<branch>`.
+  qualcomm-linux/qli-ci/.github/workflows/<name>.yml@main` value,
+  for `<name>` one of `debusine`, `debusine-build` and
+  `debusine-source-package`, is rewritten to `@<branch>`.
 - The corresponding `with.qli-ci-ref: main` value is rewritten
   to `<branch>`.
 

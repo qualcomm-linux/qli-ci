@@ -163,7 +163,7 @@ retargeted.
    from) as a fresh orphan branch, seeded from
    `tests/pkg-example/debian/` plus a lane-specific PR-hook/release set:
    - debusine lane: `debusine-pr-hook.yml`, `debusine-release.yml`, and
-     `README.debusine.md` only (`debusine-release.yml` ref-patched as above) -
+     `README.debusine.md` only (the two workflows ref-patched as above) -
      deliberately no `pkg-pr-hook.yml`, so this lane's promotion PRs (opened
      via `pkg-promote`, since no debusine-specific promote flow exists yet)
      only exercise the standalone debusine PR-hook/check split, not
@@ -200,8 +200,8 @@ Per enabled lane:
    - Debian/Ubuntu lanes: `sync-pr-hook <lane> <tag>` then
      `wait-pr-build <lane> <tag>`
    - Debusine lane: `wait-debusine-check <lane> <tag>` (no `sync-pr-hook`:
-     `debusine-pr-hook.yml` does not reference `qli-ci` at all, so there is
-     nothing to patch)
+     reset already ref-patched `debusine-pr-hook.yml` on `qcom/debian/latest`,
+     and promotion PRs branch off it)
    - `merge-pr <lane> <tag>`
    - `release-tag <lane> <tag>` — the debusine lane dispatches
      `debusine-release.yml` with `release=true` instead of `pkg-release.yml`
@@ -357,8 +357,9 @@ To avoid stale duplicate PR Build runs:
 - e2e waits for PR Build using the exact expected PR head SHA.
 - if multiple matching runs exist, the latest by `createdAt` is selected.
 
-The debusine lane has no equivalent step: `debusine-pr-hook.yml` never
-references `qli-ci`, so there is nothing to re-patch and re-push.
+The debusine lane has no equivalent step: reset already ref-patches
+`debusine-pr-hook.yml` on `qcom/debian/latest`, and promotion PRs branch off
+it, so there is nothing to re-patch and re-push.
 
 ## Release Approval Gates
 

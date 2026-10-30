@@ -1,0 +1,236 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+# Build half of Debusine CI: take the source-package-<job_index> artifact that
+# debusine-source-package.yml produced, validate it as data, and build it in
+# Debusine.
+#
+# The artifact is always treated as untrusted: it may come from a fork PR
+# (debusine-pr-check.yml). Nothing here checks out or executes the packaging
+# tree. The artifact is validated by lib/import-source-package in a job with
+# no Debusine credentials, and only the validated files reach the build job.
+# This workflow needs no write permissions and never sees
+# DEBUSINE_RELEASE_TOKEN; releasing is debusine-publish.yml's job.
+
+name: Debusine build
+
+on:
+  workflow_call:
+    inputs:
+      target_branch:
+        description: Where the packaging will land (or for dailies, has landed)
+        type: string
+        required: true
+      qli-ci-ref:
+        description: Ref of qualcomm-linux/qli-ci to check out for helper scripts
+        type: string
+        required: false
+        default: main
+      debusine-parent-workspace:
+        description: Parent Debusine workspace used to create per-run CI child workspaces
+        type: string
+        required: false
+        default: qli-ci
+      workflow_kind:
+        description: Which caller this is - one of PR, DAILY, RELEASE
+        type: string
+        required: false
+        default: ""
+      job_index:
+        # This is used to generate a unique Debusine child workspace name for
+        # each expansion of the matrix
+        description: Uniquely identifying index for matrix strategies; must match the job_index passed to debusine-source-package.yml
+        type: string
+        required: false
+        default: "0"
+    secrets:
+      DEBUSINE_USER:
+        required: true
+      DEBUSINE_TOKEN:
+        required: true
+    outputs:
+      workspace:
+        description: Debusine CI child workspace the package was built in
+        value: ${{ jobs.build.outputs.workspace }}
+      srcpkg_name:
+        description: Validated source package name
+        value: ${{ jobs.validate.outputs.srcpkg_name }}
+      srcpkg_version:
+        description: Validated source package version
+        value: ${{ jobs.validate.outputs.srcpkg_version }}
+
+permissions: {}
+
+jobs:
+  resolve:
+    name: Resolve target branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      suite: ${{ steps.resolve.outputs.suite }}
+      debusine_target_workspace: ${{ steps.resolve.outputs.debusine_target_workspace }}
+      extra_build_dep_workspaces: ${{ steps.resolve.outputs.extra_build_dep_workspaces }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          path: qli-ci
+          persist-credentials: false
+      - id: resolve
+        name: Map branch to suite
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+        run: qli-ci/lib/resolve-target-branch
+
+  validate:
+    name: Validate source package
+    needs: resolve
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/qualcomm-linux/debusine-pkg-builder:trixie
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      srcpkg_name: ${{ steps.import-source-package.outputs.srcpkg_name }}
+      srcpkg_version: ${{ steps.import-source-package.outputs.srcpkg_version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          path: qli-ci
+          persist-credentials: false
+      - name: Download source package files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: source-package-${{ inputs.job_index }}
+          path: untrusted-source-package
+      - id: import-source-package
+        name: Validate source package
+        run: |
+          set -ex
+          mkdir source-package
+          cd source-package
+          ../qli-ci/lib/import-source-package ../untrusted-source-package
+      - name: Upload validated source package files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: validated-source-package-${{ inputs.job_index }}
+          path: source-package
+          if-no-files-found: error
+
+  build:
+    name: Build in Debusine
+    needs: [resolve, validate]
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/qualcomm-linux/debusine-pkg-builder:trixie
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --user root
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      workspace: ${{ steps.build.outputs.workspace }}
+      workflow_id: ${{ steps.build.outputs.workflow_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qualcomm-linux/qli-ci
+          ref: ${{ inputs.qli-ci-ref }}
+          path: qli-ci
+          persist-credentials: false
+
+      - name: Download validated source package files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: validated-source-package-${{ inputs.job_index }}
+          path: source-package
+
+      - name: Restore source package files to workspace root
+        run: |
+          set -eux
+          find source-package -maxdepth 1 -type f -exec mv -t . {} +
+          rmdir source-package
+
+      - id: build
+        name: Build in Debusine
+        env:
+          SUITE: ${{ needs.resolve.outputs.suite }}
+          GITHUB_REPOSITORY_ID: ${{ github.repository_id }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          JOB_INDEX: ${{ inputs.job_index }}
+          DEBUSINE_HOST: ${{ vars.DEBUSINE_HOST }}
+          DEBUSINE_SCOPE: ${{ vars.DEBUSINE_SCOPE }}
+          DEBUSINE_TOKEN: ${{ secrets.DEBUSINE_TOKEN }}
+          DEBUSINE_USER: ${{ secrets.DEBUSINE_USER }}
+          DEBUSINE_PARENT_WORKSPACE: ${{ inputs.debusine-parent-workspace }}
+          EXTRA_BUILD_DEP_WORKSPACES: ${{ needs.resolve.outputs.extra_build_dep_workspaces }}
+        run: |
+          set -ex
+          qli-ci/lib/build
+
+      - name: Generate summary
+        if: ${{ !cancelled() }}
+        env:
+          DEBUSINE_HOST: ${{ vars.DEBUSINE_HOST }}
+          DEBUSINE_SCOPE: ${{ vars.DEBUSINE_SCOPE }}
+          DEBUSINE_USER: ${{ secrets.DEBUSINE_USER }}
+          DEBUSINE_TOKEN: ${{ secrets.DEBUSINE_TOKEN }}
+          DEBUSINE_WORKSPACE: ${{ steps.build.outputs.workspace }}
+          DEBUSINE_WORKFLOW_ID: ${{ steps.build.outputs.workflow_id }}
+          DEBUSINE_TARGET_WORKSPACE: ${{ needs.resolve.outputs.debusine_target_workspace }}
+          SRCPKG_NAME: ${{ needs.validate.outputs.srcpkg_name }}
+          SRCPKG_VERSION: ${{ needs.validate.outputs.srcpkg_version }}
+          SUITE: ${{ needs.resolve.outputs.suite }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+        run: |
+          qli-ci/lib/generate-step-summary
+
+      - name: Generate sources tar
+        env:
+          DEBUSINE_HOST: ${{ vars.DEBUSINE_HOST }}
+          DEBUSINE_SCOPE: ${{ vars.DEBUSINE_SCOPE }}
+          DEBUSINE_USER: ${{ secrets.DEBUSINE_USER }}
+          DEBUSINE_TOKEN: ${{ secrets.DEBUSINE_TOKEN }}
+          DEBUSINE_WORKSPACE: ${{ steps.build.outputs.workspace }}
+          DEBUSINE_TARGET_WORKSPACE: ${{ needs.resolve.outputs.debusine_target_workspace }}
+          SUITE: ${{ needs.resolve.outputs.suite }}
+          SRCPKG_NAME: ${{ needs.validate.outputs.srcpkg_name }}
+          SRCPKG_VERSION: ${{ needs.validate.outputs.srcpkg_version }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          JOB_INDEX: ${{ inputs.job_index }}
+        run: |
+          qli-ci/lib/generate-sources-tar
+
+      - name: Upload metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: metadata-${{ inputs.job_index }}
+          path: |
+            *.sources
+            metadata.json
+          if-no-files-found: error
+
+  # Part of this workflow's result on purpose: debusine.yml gates publish on
+  # this workflow succeeding, which is what makes this check block a release.
+  AXIOM_Check:
+    name: AXIOM Check
+    if: ${{ vars.AXIOM_ENABLE == 'true' &&  (vars[format('AXIOM_ENABLE_{0}', inputs.workflow_kind)] == 'true')}}
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment: Axiom
+    permissions: {}
+    steps:
+      - name: AXIOM check passed
+        run: echo "AXIOM check passed"

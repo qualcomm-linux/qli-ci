@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Ensure workflow files in a pkg-* repository match the current state of
-pkg-workflows/debusine/ in a configurable branch (default: main) of
+pkg-workflows/ in a configurable branch (default: main) of
 qualcomm-linux/qli-ci.
 """
 
@@ -14,6 +14,7 @@ qualcomm-linux/qli-ci.
 # this implementation into sync with it.
 
 import argparse
+import re
 import shutil
 import subprocess
 import sys
@@ -36,9 +37,9 @@ from repo_common import (
 
 WORKFLOW_SOURCE_REPO = "qualcomm-linux/qli-ci"
 WORKFLOW_SOURCE_DEFAULT_BRANCH = "main"
-WORKFLOW_SOURCE_PATH = "pkg-workflows/debusine"
+WORKFLOW_SOURCE_PATH = "pkg-workflows"
 
-PACKAGING_BRANCH_ALLOWLIST = [
+DEBIAN_PACKAGING_BRANCH_ALLOWLIST = [
     "qcom/debian/trixie",
     "qcom/debian/latest",
     "qli/debian/trixie",
@@ -47,24 +48,72 @@ PACKAGING_BRANCH_ALLOWLIST = [
     "qli-staging/debian/latest",
 ]
 
+# Managed Ubuntu packaging branches: qcom/ubuntu/<codename>
+UBUNTU_PACKAGING_BRANCH_PATTERN = re.compile(r"qcom/ubuntu/[^/]+")
+
+# Expected files are paths relative to WORKFLOW_SOURCE_PATH. Each is deployed
+# to .github/workflows/ under its file name.
 DEFAULT_BRANCH_FILES = [
+    "debusine/debusine-daily.yml",
+    "debusine/debusine-pr-check.yml",
+    "debusine/debusine-pr-hook.yml",
+    "debusine/debusine-release.yml",
+    "debusine/README.debusine.md",
+    "qli-ci/pkg-build.yml",
+    "qli-ci/pkg-pr-hook.yml",
+    "qli-ci/pkg-promote-prebuilt.yml",
+    "qli-ci/pkg-promote.yml",
+    "qli-ci/pkg-release.yml",
+]
+
+DEBIAN_PACKAGING_BRANCH_FILES = [
+    "debusine/debusine-pr-hook.yml",
+    "debusine/debusine-release.yml",
+    "debusine/README.debusine.md",
+]
+
+UBUNTU_PACKAGING_BRANCH_FILES = [
+    "debian/pkg-pr-hook.yml",
+]
+
+# Obsolete files are file names in .github/workflows/ that must be absent.
+LEGACY_FILES = [
+    "build-debian-package.yml",
+    "pr-pre-post-merge.yml",
+    "promote-prebuilt.yml",
+    "promote-upstream.yml",
+    "release.yml",
+    "workflows_sync.yml",
+]
+
+DEFAULT_BRANCH_OBSOLETE_FILES = LEGACY_FILES
+
+DEBIAN_PACKAGING_BRANCH_OBSOLETE_FILES = LEGACY_FILES + [
+    "debusine-daily.yml",
+    "debusine-pr-check.yml",
+    "pkg-build.yml",
+    "pkg-pr-hook.yml",
+    "pkg-promote-prebuilt.yml",
+    "pkg-promote.yml",
+    "pkg-release.yml",
+]
+
+UBUNTU_PACKAGING_BRANCH_OBSOLETE_FILES = LEGACY_FILES + [
     "debusine-daily.yml",
     "debusine-pr-check.yml",
     "debusine-pr-hook.yml",
     "debusine-release.yml",
     "README.debusine.md",
+    "pkg-build.yml",
+    "pkg-promote-prebuilt.yml",
+    "pkg-promote.yml",
+    "pkg-release.yml",
 ]
 
-PACKAGING_BRANCH_FILES = [
-    "debusine-pr-hook.yml",
-    "debusine-release.yml",
-    "README.debusine.md",
-]
-
-PR_TITLE = "Update Debusine CI workflows"
+PR_TITLE = "Update qli-ci workflow stubs"
 PR_BODY = (
     "Update workflow files to match current "
-    "`pkg-workflows/debusine/` in qualcomm-linux/qli-ci."
+    "`pkg-workflows/` in qualcomm-linux/qli-ci."
 )
 
 
@@ -154,11 +203,43 @@ def require_pkg_repo_compliance_gate(repo: str) -> None:
         )
 
 
+def is_ubuntu_packaging_branch(branch: str) -> bool:
+    """Return True if branch is, or ends in, qcom/ubuntu/<codename>.
+
+    The suffix match lets an explicitly given test branch such as
+    dev/foo/qcom/ubuntu/resolute receive the Ubuntu file set. Auto-discovery
+    of managed branches uses UBUNTU_PACKAGING_BRANCH_PATTERN.fullmatch()
+    instead.
+    """
+    suffix = rf"(?:^|/){UBUNTU_PACKAGING_BRANCH_PATTERN.pattern}$"
+    return re.search(suffix, branch) is not None
+
+
 def get_expected_files(branch: str) -> List[str]:
-    """Return the list of expected workflow filenames for a given branch."""
+    """Return the expected source paths, relative to WORKFLOW_SOURCE_PATH, for a branch."""
     if branch == "qli-ci":
         return DEFAULT_BRANCH_FILES
-    return PACKAGING_BRANCH_FILES
+    if is_ubuntu_packaging_branch(branch):
+        return UBUNTU_PACKAGING_BRANCH_FILES
+    return DEBIAN_PACKAGING_BRANCH_FILES
+
+
+def get_obsolete_files(branch: str) -> List[str]:
+    """Return the workflow filenames that must be absent from a branch."""
+    if branch == "qli-ci":
+        return DEFAULT_BRANCH_OBSOLETE_FILES
+    if is_ubuntu_packaging_branch(branch):
+        return UBUNTU_PACKAGING_BRANCH_OBSOLETE_FILES
+    return DEBIAN_PACKAGING_BRANCH_OBSOLETE_FILES
+
+
+def is_managed_branch(branch: str) -> bool:
+    """Return True if branch is in the default managed set."""
+    return (
+        branch == "qli-ci"
+        or branch in DEBIAN_PACKAGING_BRANCH_ALLOWLIST
+        or UBUNTU_PACKAGING_BRANCH_PATTERN.fullmatch(branch) is not None
+    )
 
 
 def chore_branch_name(target_branch: str) -> str:
@@ -167,14 +248,20 @@ def chore_branch_name(target_branch: str) -> str:
 
 
 def find_differing_files(pkg_workdir: Path, source_dir: Path, files: List[str]) -> List[str]:
-    """Return list of files that are missing or differ from source_dir."""
+    """Return source paths of files that are missing or differ from source_dir."""
     differing = []
-    for filename in files:
-        dest = pkg_workdir / ".github" / "workflows" / filename
-        src = source_dir / filename
+    for source_path in files:
+        dest = pkg_workdir / ".github" / "workflows" / Path(source_path).name
+        src = source_dir / source_path
         if not dest.exists() or dest.read_bytes() != src.read_bytes():
-            differing.append(filename)
+            differing.append(source_path)
     return differing
+
+
+def find_obsolete_files(pkg_workdir: Path, obsolete: List[str]) -> List[str]:
+    """Return filenames from obsolete that are present in .github/workflows/."""
+    workflows_dir = pkg_workdir / ".github" / "workflows"
+    return [filename for filename in obsolete if (workflows_dir / filename).exists()]
 
 
 def remote_chore_branch_is_current(
@@ -182,8 +269,10 @@ def remote_chore_branch_is_current(
     chore_branch: str,
     source_dir: Path,
     files: List[str],
+    obsolete: List[str],
 ) -> bool:
-    """Return True if the remote chore branch has correct content for all expected files."""
+    """Return True if the remote chore branch has correct content for all expected
+    files and none of the obsolete files."""
     ref_name = f"refs/remotes/origin/{chore_branch}"
     try:
         ref = pkg_repo.lookup_reference(ref_name)
@@ -195,14 +284,17 @@ def remote_chore_branch_is_current(
         workflows_tree = pkg_repo.get(pkg_repo.get(github_entry.id)["workflows"].id)
     except KeyError:
         return False
-    for filename in files:
+    for source_path in files:
         try:
-            entry = workflows_tree[filename]
+            entry = workflows_tree[Path(source_path).name]
         except KeyError:
             return False
         blob = pkg_repo.get(entry.id)
-        expected = (source_dir / filename).read_bytes()
+        expected = (source_dir / source_path).read_bytes()
         if blob.data != expected:
+            return False
+    for filename in obsolete:
+        if filename in workflows_tree:
             return False
     return True
 
@@ -248,29 +340,39 @@ def process_branch(
     Raises SystemExit on unrecoverable error.
     """
     files = get_expected_files(target_branch)
+    obsolete = get_obsolete_files(target_branch)
 
     checkout_remote_branch(pkg_repo, target_branch)
 
     differing = find_differing_files(pkg_workdir, source_dir, files)
+    to_remove = find_obsolete_files(pkg_workdir, obsolete)
 
-    if not differing:
+    if not differing and not to_remove:
         print(f"✓ {target_branch}: up to date")
         return False
 
     if dry_run:
-        print(f"❌ {target_branch}: would update: {', '.join(differing)}")
+        if differing:
+            names = ", ".join(Path(p).name for p in differing)
+            print(f"❌ {target_branch}: would update: {names}")
+        if to_remove:
+            print(f"❌ {target_branch}: would remove: {', '.join(to_remove)}")
 
-    # Copy updated files into the working tree
+    # Copy updated files into, and remove obsolete files from, the working tree
     workflows_dir = pkg_workdir / ".github" / "workflows"
     workflows_dir.mkdir(parents=True, exist_ok=True)
-    for filename in differing:
-        shutil.copy2(source_dir / filename, workflows_dir / filename)
+    for source_path in differing:
+        shutil.copy2(source_dir / source_path, workflows_dir / Path(source_path).name)
+    for filename in to_remove:
+        (workflows_dir / filename).unlink()
 
     # Commit
     index = pkg_repo.index
     index.read()
-    for filename in differing:
-        index.add(f".github/workflows/{filename}")
+    for source_path in differing:
+        index.add(f".github/workflows/{Path(source_path).name}")
+    for filename in to_remove:
+        index.remove(f".github/workflows/{filename}")
     index.write()
     tree_oid = index.write_tree()
     sig = pygit2.Signature("qli-ci pkg-management", "noreply@github.com")
@@ -278,7 +380,7 @@ def process_branch(
         "HEAD",
         sig,
         sig,
-        "Update Debusine CI workflows",
+        "Update qli-ci workflow stubs",
         tree_oid,
         [pkg_repo.head.target],
     )
@@ -295,7 +397,9 @@ def process_branch(
     chore_branch = chore_branch_name(target_branch)
 
     # Check if remote chore branch is already current
-    chore_is_current = remote_chore_branch_is_current(pkg_repo, chore_branch, source_dir, files)
+    chore_is_current = remote_chore_branch_is_current(
+        pkg_repo, chore_branch, source_dir, files, obsolete
+    )
     open_pr = get_open_pr(gh_repo, chore_branch, target_branch)
 
     if chore_is_current and open_pr is not None:
@@ -316,7 +420,7 @@ def process_branch(
         )
         print(f"✓ {target_branch}: PR created")
     else:
-        open_pr.create_issue_comment("Branch updated with latest Debusine CI workflows.")
+        open_pr.create_issue_comment("Branch updated with latest qli-ci workflow stubs.")
         print(f"✓ {target_branch}: commented on existing PR #{open_pr.number}")
 
     return True
@@ -413,7 +517,7 @@ def main() -> None:
     changes = False
 
     with tempfile.TemporaryDirectory(
-        prefix=f"debusine-wf-{repo_name}-", delete=not no_clean
+        prefix=f"qli-ci-wf-{repo_name}-", delete=not no_clean
     ) as tmpdir:
         tmppath = Path(tmpdir)
 
@@ -445,6 +549,17 @@ def main() -> None:
                 f"{WORKFLOW_SOURCE_PATH!r} not found in "
                 f"{WORKFLOW_SOURCE_REPO}@{source_branch}"
             )
+        all_source_files = sorted(
+            set(DEFAULT_BRANCH_FILES)
+            | set(DEBIAN_PACKAGING_BRANCH_FILES)
+            | set(UBUNTU_PACKAGING_BRANCH_FILES)
+        )
+        missing = [f for f in all_source_files if not (source_dir / f).is_file()]
+        if missing:
+            raise CLIError(
+                f"workflow source files not found in {WORKFLOW_SOURCE_PATH!r} of "
+                f"{WORKFLOW_SOURCE_REPO}@{source_branch}: {', '.join(missing)}"
+            )
 
         if source_branch != WORKFLOW_SOURCE_DEFAULT_BRANCH:
             # Importing the debug case inline here helps with validation. If
@@ -464,19 +579,21 @@ def main() -> None:
             except KeyError:
                 raise CLIError(f"branch 'qli-ci' does not exist in {full_repo}")
 
-            debian_branches = sorted(
+            packaging_branches = sorted(
                 ref.removeprefix("refs/remotes/origin/")
                 for ref in pkg_repo.references
-                if ref.removeprefix("refs/remotes/origin/") in PACKAGING_BRANCH_ALLOWLIST
+                if ref.startswith("refs/remotes/origin/")
+                and ref.removeprefix("refs/remotes/origin/") != "qli-ci"
+                and is_managed_branch(ref.removeprefix("refs/remotes/origin/"))
             )
-            all_branches = ["qli-ci"] + debian_branches
+            all_branches = ["qli-ci"] + packaging_branches
 
         if source_branch != WORKFLOW_SOURCE_DEFAULT_BRANCH and repo_name.startswith("pkg-"):
-            managed = {"qli-ci"} | set(PACKAGING_BRANCH_ALLOWLIST)
             default_set = {
                 ref.removeprefix("refs/remotes/origin/")
                 for ref in pkg_repo.references
-                if ref.removeprefix("refs/remotes/origin/") in managed
+                if ref.startswith("refs/remotes/origin/")
+                and is_managed_branch(ref.removeprefix("refs/remotes/origin/"))
             }
             overlap = sorted(set(all_branches) & default_set)
             if overlap:

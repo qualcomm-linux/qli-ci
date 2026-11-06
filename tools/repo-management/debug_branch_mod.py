@@ -1,7 +1,7 @@
 # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 
-"""Rewrite Debusine reusable workflow branch references in packaging workflow YAML files."""
+"""Rewrite qli-ci reusable workflow branch references in packaging workflow YAML files."""
 
 # This is a hack that modifies the stub workflow files to use a branch of
 # qli-ci to supply the reusable workflow to allow for development and
@@ -13,25 +13,24 @@
 # invoked via `./update-workflow-files --debug-source-branch=...`.
 
 import itertools
+import re
 from pathlib import Path
 
 import ruamel.yaml
 
-# The Debusine reusable workflows the stubs call: debusine.yml (daily,
-# release), debusine-build.yml (PR check) and debusine-source-package.yml
-# (PR hook).
-DEBUSINE_USES_PREFIXES = tuple(
-    f"qualcomm-linux/qli-ci/.github/workflows/{name}@"
-    for name in ("debusine.yml", "debusine-build.yml", "debusine-source-package.yml")
+# Matches a call to any qli-ci reusable workflow, capturing everything up to
+# and including the "@" so that only the ref is rewritten.
+QLI_CI_USES_PATTERN = re.compile(
+    r"(qualcomm-linux/qli-ci/\.github/workflows/[^/@]+\.ya?ml@)(.*)"
 )
 
 
 def modify_workflow_files(directory: Path, branch: str) -> None:
-    """Rewrite @main references to @branch in all .yml files in directory."""
+    """Rewrite @main references to @branch in all .yml files under directory."""
     yaml = ruamel.yaml.YAML()
     yaml.preserve_quotes = True
 
-    for path in itertools.chain(directory.glob("*.yml"), directory.glob("*.yaml")):
+    for path in itertools.chain(directory.rglob("*.yml"), directory.rglob("*.yaml")):
         doc = yaml.load(path)
         if not isinstance(doc, dict):
             continue
@@ -43,12 +42,9 @@ def modify_workflow_files(directory: Path, branch: str) -> None:
             if not isinstance(job, dict):
                 continue
             uses = job.get("uses", "")
-            prefix = next(
-                (p for p in DEBUSINE_USES_PREFIXES if isinstance(uses, str) and uses.startswith(p)),
-                None,
-            )
-            if prefix:
-                if uses != prefix + "main":
+            match = QLI_CI_USES_PATTERN.fullmatch(uses) if isinstance(uses, str) else None
+            if match:
+                if match.group(2) != "main":
                     raise ValueError(
                         f"{path}: unexpected ref in uses: {uses!r} (expected @main)"
                     )
@@ -57,7 +53,7 @@ def modify_workflow_files(directory: Path, branch: str) -> None:
                     raise ValueError(
                         f"{path}: qli-ci-ref must be 'main' when uses is {uses!r}"
                     )
-                job["uses"] = prefix + branch
+                job["uses"] = match.group(1) + branch
                 with_block["qli-ci-ref"] = branch
                 modified = True
         if modified:

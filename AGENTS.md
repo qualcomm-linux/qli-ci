@@ -114,8 +114,9 @@ transient branch (for example `debian/pr/*`), routing can fall back to
 - `.github/workflows/debusine-publish.yml`
   - release step: Debusine release plus release commit/tag push; the only
     one needing write permissions and `DEBUSINE_RELEASE_TOKEN`
-- `pkg-workflows/debusine/*`
-  - source Debusine stub workflows copied into managed `pkg-*` repos
+- `pkg-workflows/`
+  - source stub workflows (Debusine and pkg-*) copied into managed `pkg-*`
+    repos; flat, because each file is deployed under its own name
 
 ## Important Debian/Debusine Helper Entrypoints
 
@@ -177,7 +178,7 @@ Design decisions to preserve:
   add a shortcut that builds straight from a checkout, and do not add
   generate-or-import modes to one workflow.
 - Keep `lib/resolve-target-branch` in sync with the `check-branches`
-  candidates in `pkg-workflows/debusine/debusine-daily.yml`.
+  candidates in `pkg-workflows/debusine-daily.yml`.
 - Never check out or execute PR code in a trusted (`workflow_run`) context.
   The `pull_request` hook calls `debusine-source-package.yml`;
   `debusine-pr-check.yml` copies that artifact into its own run and calls
@@ -187,9 +188,14 @@ Design decisions to preserve:
   and do not make the PR check call `debusine.yml` or `debusine-publish.yml`.
 
 When changing the Debusine reusable workflow contracts, also update
-`pkg-workflows/debusine/*` (including `README.md` and `README.debusine.md`)
+the `pkg-workflows/debusine-*` stubs (and `README.md`, `README.debusine.md`)
 and `tools/repo-management/debug_branch_mod.py`, then resync managed `pkg-*`
 repos with `tools/repo-management/update-workflow-files`.
+
+`update-workflow-files` deploys every `pkg-workflows/*` stub (Debusine and
+pkg-*) to managed `pkg-*` branches and removes obsolete ones. When adding,
+renaming or removing a stub, update `tools/repo-management/SPECIFICATION.md`
+and the file lists in `update-workflow-files` together.
 
 ## Do Not Reintroduce
 
@@ -202,6 +208,9 @@ decision to bring them back:
   `Dockerfiles/debusine-builder/`
 - copied legacy `scripts/ci/` Debusine helper trees
 - stale `*.old` workflow snapshots
+- a separate stub sync workflow such as `.github/workflows/workflows_sync.yml`;
+  `update-workflow-files` is the single tool that manages workflow stubs in
+  `pkg-*` repositories
 
 ## pkg-example End-to-End Test Suite
 

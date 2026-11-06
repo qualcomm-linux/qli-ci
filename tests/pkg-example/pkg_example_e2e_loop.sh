@@ -412,7 +412,7 @@ rebuild_default_branch_tree() {
 
   local wf
   for wf in "${DEFAULT_BRANCH_CALLER_FILES[@]}"; do
-    cp "${QLI_CI_ROOT}/pkg-workflows/qli-ci/${wf}" ".github/workflows/${wf}"
+    cp "${QLI_CI_ROOT}/pkg-workflows/${wf}" ".github/workflows/${wf}"
     patch_qli_ref_file ".github/workflows/${wf}"
   done
 
@@ -423,17 +423,17 @@ rebuild_default_branch_tree() {
 
   # Debusine default-branch set. These call qli-ci's debusine.yml reusable
   # workflow, so they need the same ref patch.
-  cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-daily.yml" .github/workflows/debusine-daily.yml
+  cp "${QLI_CI_ROOT}/pkg-workflows/debusine-daily.yml" .github/workflows/debusine-daily.yml
   patch_qli_ref_file .github/workflows/debusine-daily.yml
-  cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-check.yml" .github/workflows/debusine-pr-check.yml
+  cp "${QLI_CI_ROOT}/pkg-workflows/debusine-pr-check.yml" .github/workflows/debusine-pr-check.yml
   patch_qli_ref_file .github/workflows/debusine-pr-check.yml
-  cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
+  cp "${QLI_CI_ROOT}/pkg-workflows/README.debusine.md" .github/workflows/README.debusine.md
 
   # debusine-release.yml is dispatched against $DEBIAN_SEED_BRANCH, not this
   # branch, but workflow_dispatch requires the workflow file to exist on the
   # repository's actual default branch to be dispatchable via the API at
   # all, regardless of --ref. Seed it here too for that reason alone.
-  cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
+  cp "${QLI_CI_ROOT}/pkg-workflows/debusine-release.yml" .github/workflows/debusine-release.yml
   patch_qli_ref_file .github/workflows/debusine-release.yml
 }
 
@@ -467,13 +467,13 @@ rebuild_debian_seed_tree() {
     # debusine.yml, so both need the ref patch. Promotion and fork PRs branch
     # off this tree, so the hook they run is already pinned to the ref under
     # test and needs no per-PR sync-pr-hook step.
-    cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-pr-hook.yml" .github/workflows/debusine-pr-hook.yml
+    cp "${QLI_CI_ROOT}/pkg-workflows/debusine-pr-hook.yml" .github/workflows/debusine-pr-hook.yml
     patch_qli_ref_file .github/workflows/debusine-pr-hook.yml
-    cp "${QLI_CI_ROOT}/pkg-workflows/debusine/debusine-release.yml" .github/workflows/debusine-release.yml
+    cp "${QLI_CI_ROOT}/pkg-workflows/debusine-release.yml" .github/workflows/debusine-release.yml
     patch_qli_ref_file .github/workflows/debusine-release.yml
-    cp "${QLI_CI_ROOT}/pkg-workflows/debusine/README.debusine.md" .github/workflows/README.debusine.md
+    cp "${QLI_CI_ROOT}/pkg-workflows/README.debusine.md" .github/workflows/README.debusine.md
   else
-    cp "${QLI_CI_ROOT}/pkg-workflows/debian/pkg-pr-hook.yml" .github/workflows/pkg-pr-hook.yml
+    cp "${QLI_CI_ROOT}/pkg-workflows/pkg-pr-hook.yml" .github/workflows/pkg-pr-hook.yml
     patch_qli_ref_file .github/workflows/pkg-pr-hook.yml
   fi
 }

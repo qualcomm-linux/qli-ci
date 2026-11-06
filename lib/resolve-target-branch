@@ -9,7 +9,7 @@ set -o pipefail
 # identifier and GitHub environment, and pick the packaging ref to check out.
 # This is the single copy of the branch map shared by debusine-source-package.yml,
 # debusine-build.yml and debusine-publish.yml. Keep it in sync with the
-# check-branches candidates in pkg-workflows/debusine/debusine-daily.yml.
+# check-branches candidates in pkg-workflows/debusine-daily.yml.
 #
 # TARGET_BRANCH may be chosen by an untrusted PR author (the base branch of a
 # fork PR), so only exact known values are accepted.

@@ -2,7 +2,7 @@
 
 ## Scope and purpose
 
-These are deployment tests. Their goal is to verify that our specific Debusine deployment satisfies the requirements of the packaging workflows in `pkg-workflows/debusine/` — that the workspaces, archive suites, workflow templates, and APT repository configuration are all set up correctly and behave as the workflows depend on.
+These are deployment tests. Their goal is to verify that our specific Debusine deployment satisfies the requirements of the packaging workflows in `pkg-workflows/` — that the workspaces, archive suites, workflow templates, and APT repository configuration are all set up correctly and behave as the workflows depend on.
 
 The packaging workflows do not talk to Debusine directly: they call the reusable workflow in `.github/workflows/debusine.yml`, which in turn drives Debusine through the helper scripts in `lib/` (`build`, `release`, and friends). That reusable workflow is therefore part of what these tests exist to protect — the Debusine operations it performs (creating child workspaces, creating archive suites, creating the `debian_pipeline` workflow template, importing source packages, running builds, and running `package-publish` to release into the target workspaces) are exactly the behaviours exercised here.
 

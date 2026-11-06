@@ -1,5 +1,12 @@
-This directory is a set of four workflows that should be imported into each pkg-*
-repository to enable Debusine CI. `debusine-daily.yml` and
+This directory holds the workflow stubs that
+`tools/repo-management/update-workflow-files` deploys into `pkg-*`
+repositories. See `tools/repo-management/SPECIFICATION.md` ("Workflow
+Files") for which branches get which files. Every file is deployed to
+`.github/workflows/` under its own name, so this directory is kept flat and
+each name means exactly one file.
+
+The `debusine-*.yml` files are a set of four workflows that should be imported
+into each pkg-* repository to enable Debusine CI. `debusine-daily.yml` and
 `debusine-pr-check.yml` belong in the default branch. `debusine-pr-hook.yml`
 and `debusine-release.yml` must also be copied to each enabled packaging
 (`qli/debian/*`, `qli-staging/debian/*`, or `qcom/debian/*` during transition)

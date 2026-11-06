@@ -10,15 +10,28 @@ set -ex
 # to the origin repository.
 
 # Dependencies:
-#   git dpkg-parsechangelog dch
+#   git (incl. git-bundle), dpkg-parsechangelog, dch, awk, python3
+#   lib/next_qcom_version (sibling helper, resolved relative to this script)
 
 # Inputs:
-#   $RELEASE_TAG
-#   Checked out branch in $PWD/srcpkg/ directory (without release commit/tag)
-#   release.bundle (containing release commit and tag)
+#   $PACKAGE_VERSION_IDENTIFIER: vendor identifier passed to next_qcom_version
+#       to compute the next package version (e.g. "qli" or "qli+staging").
+#       Optional; defaults to "qcom" when unset or empty.
+#   $PWD/srcpkg/: the packaging repo checked out on the branch to release
+#       (without the release commit/tag), with an "origin" remote that is
+#       writeable using ambient credentials (we push without re-authenticating)
+#       and a real branch checked out (not a detached HEAD).
+#   $PWD/release.bundle: a git bundle with a single head, containing the
+#       release commit and tag, that fast-forwards onto the srcpkg/ branch.
 
 # Outputs:
-#   `git push origin`
+#   Adds a commit to the srcpkg/ branch opening the next release (a new
+#       UNRELEASED d/changelog entry), authored/committed as
+#       "Debusine Action Bot <noreply@bot.invalid>".
+#   Pushes the release ref/tag and the current branch to origin.
+
+# Exits non-zero if d/changelog is still UNRELEASED, or if any step fails
+# (set -e).
 
 # Resolve sibling helpers through an absolute path captured once, so that a
 # later cd cannot break them.

@@ -19,7 +19,7 @@ set -o pipefail
 # Outputs:
 #     $PWD: the validated .changes file together with all referenced files
 #     $GITHUB_OUTPUT (append): srcpkg_name, srcpkg_version, changes_path,
-#         dsc_path
+#         dsc_path, dkms_modules
 
 : ${GITHUB_OUTPUT:=/dev/null}
 
@@ -79,6 +79,16 @@ if ! [[ "$srcpkg_version" =~ ^[A-Za-z0-9.+~:-]+$ ]]; then
     exit 1
 fi
 
+# Module stems from the -dkms binaries, for deciding whether to run the DKMS
+# check, so none is a normal result rather than a failure. Binary is a foldable
+# field, hence grep-dctrl and stripping the continuation whitespace.
+dkms_modules=$(grep-dctrl -n -s Binary . "${dscs[0]}" \
+    | tr ',' '\n' | tr -d ' \t' | sed -n 's/-dkms$//p' | paste -sd, -)
+if [ -n "$dkms_modules" ] && ! [[ "$dkms_modules" =~ ^[a-z0-9][a-z0-9.+,-]+$ ]]; then
+    echo "Invalid Binary in .dsc" >&2
+    exit 1
+fi
+
 mv -t . "$src_dir"/*
 rmdir "$src_dir"
 
@@ -87,4 +97,5 @@ srcpkg_name=$srcpkg_name
 srcpkg_version=$srcpkg_version
 changes_path=$(basename "${changes[0]}")
 dsc_path=$dsc_name
+dkms_modules=$dkms_modules
 END

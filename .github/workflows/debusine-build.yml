@@ -100,6 +100,7 @@ jobs:
     outputs:
       srcpkg_name: ${{ steps.import-source-package.outputs.srcpkg_name }}
       srcpkg_version: ${{ steps.import-source-package.outputs.srcpkg_version }}
+      dkms_modules: ${{ steps.import-source-package.outputs.dkms_modules }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -234,3 +235,20 @@ jobs:
     steps:
       - name: AXIOM check passed
         run: echo "AXIOM check passed"
+
+  # Part of this workflow's result on purpose, as above: a module that no longer
+  # builds against the published kernels fails this workflow, so debusine.yml
+  # skips publish. Here rather than in debusine.yml so the PR path is covered.
+  # Takes the validated artifact because, unlike the rest of this workflow, it
+  # unpacks and builds the package.
+  dkms-check:
+    name: DKMS module check
+    if: ${{ needs.validate.outputs.dkms_modules != '' }}
+    needs: [resolve, validate]
+    permissions:
+      contents: read
+      packages: read
+    uses: qualcomm-linux/pkg-linux-qcom/.github/workflows/dkms-check.yml@main
+    with:
+      suite: ${{ needs.resolve.outputs.suite }}
+      source-package-artifact: validated-source-package-${{ inputs.job_index }}

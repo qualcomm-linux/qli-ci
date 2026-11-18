@@ -11,7 +11,6 @@ import pytest
 import requests
 
 from helpers import (
-    check_apt_authenticated,
     check_apt_unauthenticated,
     fetch_package_stanza,
     verify_inrelease_signature,
@@ -28,7 +27,7 @@ def test_release_workflow_succeeded(publish_result):
 
 
 @pytest.mark.publish
-def test_apt_target_public_inrelease(creds, publish_result):
+def test_apt_target_public_inrelease(publish_result):
     from debian.deb822 import Release
 
     suite = publish_result["suite"]
@@ -44,10 +43,12 @@ def test_apt_target_public_inrelease(creds, publish_result):
     assert component in components, (
         f"Component {component!r} not found in InRelease Components at {url}: {components}"
     )
+    # The released target repository is fully public, including its signing key,
+    # so fetch signing-keys.asc unauthenticated and assert it is publicly served.
     key_url = f"{publish_result['apt_url_base']}/signing-keys.asc"
-    key_resp = check_apt_authenticated(key_url, creds["user"], creds["token"])
+    key_resp = check_apt_unauthenticated(key_url)
     assert key_resp.status_code == 200, (
-        f"Expected 200 for signing-keys.asc at {key_url}, got {key_resp.status_code}"
+        f"Expected 200 (public) for signing-keys.asc at {key_url}, got {key_resp.status_code}"
     )
     verify_inrelease_signature(resp.content, key_resp.text)
 

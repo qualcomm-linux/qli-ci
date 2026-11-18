@@ -23,7 +23,10 @@ from tenacity import before_sleep_log, retry, retry_if_result, stop_after_delay,
 
 import debian.deb822
 
+import pytest
+
 from debusine.client.debusine import Debusine
+from debusine.client.exceptions import ClientForbiddenError, DebusineError
 
 _log = logging.getLogger(__name__)
 
@@ -237,4 +240,24 @@ def verify_inrelease_signature(inrelease_bytes: bytes, signing_key_asc: str) -> 
         )
         assert result.returncode == 0, (
             f"gpgv signature verification failed:\n{result.stderr.decode()}"
+        )
+
+
+def assert_permission_denied(fn):
+    """
+    Assert that calling fn() is rejected by Debusine as an authorization failure.
+
+    The client maps an HTTP 403 to ClientForbiddenError, while a
+    problem+json authorization error arrives as a DebusineError carrying a
+    401/403 status_code (see debusine_http_client._api_request). Accept either,
+    but for DebusineError require the status code to be a permission code so we
+    do not mistake a validation or lookup failure (e.g. HTTP 400) for a denial.
+    """
+    with pytest.raises((ClientForbiddenError, DebusineError)) as exc_info:
+        fn()
+    err = exc_info.value
+    if isinstance(err, DebusineError):
+        assert err.status_code in (401, 403), (
+            f"Expected a 401/403 permission error, got status_code="
+            f"{err.status_code!r}: {err}"
         )

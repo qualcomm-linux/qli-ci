@@ -28,6 +28,7 @@ pkg-mink-idl-compiler
 pkg-minkipc
 pkg-optee-client
 pkg-optee-test
+pkg-pipewire
 pkg-qcom-fastcv-binaries
 pkg-qcom-sensors
 pkg-qcom-sv-binaries

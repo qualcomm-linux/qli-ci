@@ -13,7 +13,7 @@ from collections import namedtuple
 
 import pytest
 
-pytest_plugins = ["build_fixtures", "publish_fixtures"]
+pytest_plugins = ["build_fixtures", "publish_fixtures", "signing_fixtures"]
 
 
 # ---------------------------------------------------------------------------

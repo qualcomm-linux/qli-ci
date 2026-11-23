@@ -46,6 +46,55 @@ For each debian build result × target workspace (`qli`, `qli-staging`):
    - Lists the published package in `Packages.xz`.
    - Serves the `.deb` file.
 
+### Signing keys (`-m signing`)
+
+These verify which keys sign the apt repositories, so the migration of the
+InRelease signing keys into AWS KMS can be validated at each phase. They do one
+fresh debian build in an ephemeral `qli-ci-*` workspace and one
+`package-publish` into each of `qli` and `qli-staging`, then:
+
+- For both `qli` and `qli-staging`: the exact set of keys that signed the freshly
+  released public `InRelease` must equal the expected set for the current phase
+  (`DEBUSINE_SIGNING_KEY_PHASE`):
+  - **phase 1** — the *old* set only,
+  - **phase 2** — the *old* ∪ *new* set,
+  - **phase 3** — the *new* set only.
+- For the ephemeral `qli-ci-*` build workspace: its `InRelease` must be signed by
+  a throwaway key that is **none** of the known qli/qli-staging keys in any
+  environment.
+
+Set comparison is done at the primary-key-fingerprint level, so a signature made
+by a signing subkey still counts as its one parent key.
+
+#### Key data
+
+The expected sets are committed ASCII-armored public keys, per environment and
+per workspace:
+
+```
+data/signing-keys/<environment>/<workspace>/{old,new}/*.asc
+```
+
+- `<environment>` is derived from `DEBUSINE_HOST`: `debusine.qualcomm.com` →
+  `production`; `<env>.debusine.qualcomm.com` → `<env>` (`stage`, `test`, `dev2`).
+- A "set" is the union of all public keys found across the `.asc` files in a
+  group directory.
+- The **old** set is populated from the live deployments with
+  `data/signing-keys/fetch-old-keys` (a one-off; re-run only to refresh the
+  snapshot). An environment/workspace with no published key is skipped, and its
+  signing tests then skip.
+- For **phase 2+**, drop the new public key(s) into
+  `data/signing-keys/<environment>/<workspace>/new/` (one `signing-keys.asc`
+  with all new keys, or several `.asc` files).
+
+#### Running a phase
+
+`DEBUSINE_SIGNING_KEY_PHASE` (prompted by `setenv`, default `1`) selects the
+expectation. To advance the migration: commit the new keys, bump the phase, and
+re-run `-m signing`. A phase whose required `old/` or `new/` directory is empty
+skips with a message naming the directory to populate. The ephemeral check is
+phase-independent and uses every committed key.
+
 ## Dependencies
 
 The tests run inside a `debusine-pkg-builder` container or any host with:
@@ -92,6 +141,11 @@ py.test-3 -m build .
 Run only the publish phase:
 ```sh
 py.test-3 -m publish .
+```
+
+Run only the signing-key phase:
+```sh
+py.test-3 -m signing .
 ```
 
 Run only one suite:

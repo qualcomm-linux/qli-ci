@@ -95,12 +95,20 @@ _debusine_prompt_secret DEBUSINE_PRODUCTION_RELEASE_TOKEN "DEBUSINE_PRODUCTION_R
 _debusine_prompt_secret DEBUSINE_STAGING_RELEASE_TOKEN "DEBUSINE_STAGING_RELEASE_TOKEN (for qli-staging)" "DEBUSINE_STAGING_RELEASE_TOKEN"
 echo
 
+# Signing-key migration phase for the `signing` tests: 1 = old set only,
+# 2 = old ∪ new, 3 = new set only. Defaults to 1.
+read -r -p "DEBUSINE_SIGNING_KEY_PHASE [${DEBUSINE_SIGNING_KEY_PHASE:-1}]: " _debusine_phase_input
+DEBUSINE_SIGNING_KEY_PHASE="${_debusine_phase_input:-${DEBUSINE_SIGNING_KEY_PHASE:-1}}"
+unset _debusine_phase_input
+echo
+
 export DEBUSINE_HOST
 export DEBUSINE_SCOPE="qualcomm"
 export DEBUSINE_USER
 export DEBUSINE_TOKEN
 export DEBUSINE_PRODUCTION_RELEASE_TOKEN
 export DEBUSINE_STAGING_RELEASE_TOKEN
+export DEBUSINE_SIGNING_KEY_PHASE
 
 unset _DEBUSINE_DEFAULT_HOST _DEBUSINE_PRODUCTION_HOST _DEBUSINE_HOST_SUFFIX _DEBUSINE_DEFAULT_USER
 unset -f _debusine_select_host _debusine_prompt_secret

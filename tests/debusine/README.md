@@ -148,6 +148,13 @@ Run only the signing-key phase:
 py.test-3 -m signing .
 ```
 
+Run only the offline unit tests (no credentials needed — these exercise the
+signing-key logic against the committed keys and the sample `InRelease` files in
+`testdata/`, so you can run them without sourcing `setenv`):
+```sh
+py.test-3 -m unit .
+```
+
 Run only one suite:
 ```sh
 py.test-3 -k trixie .

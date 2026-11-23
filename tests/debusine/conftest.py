@@ -30,7 +30,16 @@ _REQUIRED_VARS = [
 ]
 
 
-def pytest_configure(config):
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(config, items):
+    """
+    Fail fast if credentials are missing, but only when a credentialed test is
+    selected. The pure-logic ``unit`` tests need no Debusine account, so a
+    ``-m unit`` run stays offline. Runs ``trylast`` so marker deselection has
+    already pruned ``items`` to what will actually run.
+    """
+    if not items or all("unit" in item.keywords for item in items):
+        return
     missing = [v for v in _REQUIRED_VARS if not os.environ.get(v)]
     if missing:
         pytest.exit(

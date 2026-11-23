@@ -1,0 +1,52 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: Qualcomm
+Label: qli
+Suite: trixie
+Codename: trixie
+Date: Mon, 23 Nov 2026 10:59:20 UTC
+Acquire-By-Hash: yes
+Architectures: all amd64 arm64
+Components: main contrib non-free non-free-firmware
+Snapshots: https://deb.debusine.qualcomm.com/@PATH@/@SNAPSHOTID@/
+SHA256:
+ 7fff9c37940e067cb94657cefad2b6f6ecd33f5f902022c1609263e830134b50             3352 contrib/binary-all/Packages
+ 97619a5b66d2bf7bd5133600cc9a491349ec51453e7d30404f08291adcd73131             1176 contrib/binary-all/Packages.xz
+ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 contrib/binary-amd64/Packages
+ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 contrib/binary-amd64/Packages.xz
+ fa9b278e97ac618a2d77e86c1924c19c676d5e3a1c2b65db54704c8c0d7a7e97            23966 contrib/binary-arm64/Packages
+ c73dc67c0d9c1c0c1328d1b4a86d110573d864a5a2d8784a6d8f23286f1d73e4             5216 contrib/binary-arm64/Packages.xz
+ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 contrib/source/Sources
+ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 contrib/source/Sources.xz
+ 7c4bd049063d6b66559754b73ae002894eac8b65a36601dae0a1f5ebdd630a95            18706 main/binary-all/Packages
+ d8cddeac89e0585a8bc10ac17307b25e6d0583b73fdbdab008ed14ac09d47140             3576 main/binary-all/Packages.xz
+ 0fa2f0376a3ab3e55f346aa50e84917c00853f621701f08d54750a935ac92db1            66417 main/binary-amd64/Packages
+ 559973a128ccc3eb7c0f9969e6e77a0420a80ac7792fb0ea4dee0a901f9db75e             9864 main/binary-amd64/Packages.xz
+ 1e1a8ac1645829ef43916df2a416ce7bf5db01398017b15f14ea1ea893171724           482107 main/binary-arm64/Packages
+ f3da5d1e2f24506028644344845158b5bc5b0cc5f9eb9219414b1faf17680b7b            42036 main/binary-arm64/Packages.xz
+ 9c568c3a5fdb8e6e6026b07e71f905d98f519fa46ac2362bb50738d59bfb06e1           112372 main/source/Sources
+ e0d01a10cd98942ddf3527346da0c87c962b80f29dfd5e5152f63097dcbe76bf            16948 main/source/Sources.xz
+ 0936bed4fe04f6aa1bb58f3cf5abbadda2890cda0ae603695d7958998d821d7b             8982 non-free/binary-all/Packages
+ 3f95485362f0deddcd99943977fc27ed134f67f98508e2beb93b77300cdff9eb             2264 non-free/binary-all/Packages.xz
+ f3a6cd0dac7efff0089d82e0c51b34fdcd4a38f61fb69190f70f4435b30ec227             1418 non-free/binary-amd64/Packages
+ 77d151e3e732c6d423c0406d70be083c6da4dd9da1ecc7be456a845c10de99e5              616 non-free/binary-amd64/Packages.xz
+ efaa9900a26b6644de5f9a608e02526fb472b7c9cdd68b46e6dc8ec97b2d30c6            51158 non-free/binary-arm64/Packages
+ 347710c10903d7650e116c0a9492fac5cf486868bed6e25c16aeeeec6350d7c4             8464 non-free/binary-arm64/Packages.xz
+ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 non-free/source/Sources
+ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 non-free/source/Sources.xz
+ e9e9a2dfc76e1dd53e3a3551be8664979d46d171d0022a5b793f34fa0a558262             1996 non-free-firmware/binary-all/Packages
+ 294577d2eb99dcfe95d59a62a9994fb18171fbdfc96b5190b5e958a77ca043f9              576 non-free-firmware/binary-all/Packages.xz
+ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 non-free-firmware/binary-amd64/Packages
+ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 non-free-firmware/binary-amd64/Packages.xz
+ e7f631c61585edfb188c57d4e2fb10662a2fb8a6294b7b64a1648d41435ce260             1121 non-free-firmware/binary-arm64/Packages
+ 2d2c380abd9870cb846eea4dfc20b9f15a858f5a1e612df841c88e868f3decfb              528 non-free-firmware/binary-arm64/Packages.xz
+ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 non-free-firmware/source/Sources
+ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 non-free-firmware/source/Sources.xz
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQQ7C4V/J/xo8TlJBqRvypK+gd/DwgUCawQckQAKCRBvypK+gd/D
+wpihAQDivtBcj/q+QnWmVJtibN2nrzV4EZghqiErvqs0n60IkQD+OcfHKm2GkeU6
+IuoYs35e/QD582AZm2YVp+3VH6K0DAc=
+=oUpp
+-----END PGP SIGNATURE-----

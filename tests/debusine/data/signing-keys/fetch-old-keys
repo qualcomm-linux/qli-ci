@@ -1,0 +1,67 @@
+#!/bin/bash
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+#
+# Populate the "old" signing-key set for each environment and workspace by
+# fetching the live signing-keys.asc published by each Debusine deployment.
+#
+#   data/signing-keys/<environment>/<workspace>/old/signing-keys.asc
+#
+# These committed keys are the snapshot the phase-1 (and, as part of the union,
+# phase-2) signing-key tests compare against. Re-run this only to refresh the
+# recorded old set; an environment that is unreachable is reported and skipped
+# (its tests then skip with an actionable message).
+#
+# Usage:
+#   bash data/signing-keys/fetch-old-keys            # all environments
+#   ENVIRONMENTS="production stage" bash .../fetch-old-keys   # a subset
+
+set -u
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# lib/signing-key-is-valid rejects the well-formed but empty armor block that
+# Debusine briefly returns for a freshly created workspace.
+is_valid="$(cd "${here}/../../../../lib" && pwd)/signing-key-is-valid"
+
+: "${ENVIRONMENTS:=production stage test dev2}"
+: "${WORKSPACES:=qli qli-staging}"
+
+scope="qualcomm"
+
+host_for_env() {
+    local env="$1"
+    if [[ "$env" == "production" ]]; then
+        echo "deb.debusine.qualcomm.com"
+    else
+        echo "deb.${env}.debusine.qualcomm.com"
+    fi
+}
+
+rc=0
+for env in $ENVIRONMENTS; do
+    host="$(host_for_env "$env")"
+    for ws in $WORKSPACES; do
+        dest_dir="${here}/${env}/${ws}/old"
+        dest="${dest_dir}/signing-keys.asc"
+        url="https://${host}/${scope}/${ws}/signing-keys.asc"
+        mkdir -p "$dest_dir"
+        echo "Fetching ${url}"
+        tmp="$(mktemp)"
+        if ! curl -fLsS -o "$tmp" "$url"; then
+            echo "  !! failed to fetch ${url} (leaving ${dest} unchanged/absent)" >&2
+            rm -f "$tmp"
+            rc=1
+            continue
+        fi
+        if ! "$is_valid" < "$tmp"; then
+            echo "  !! ${url} returned an empty/invalid key block; skipping" >&2
+            rm -f "$tmp"
+            rc=1
+            continue
+        fi
+        mv "$tmp" "$dest"
+        echo "  -> ${dest}"
+    done
+done
+
+exit "$rc"

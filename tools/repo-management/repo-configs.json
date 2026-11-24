@@ -62,5 +62,22 @@
         "type": "none"
       }
     }
-  }
+  },
+  "labels": [
+    {
+      "name": "ostt-help",
+      "color": "008672",
+      "description": "Needs help from the OSTT team"
+    },
+    {
+      "name": "debian",
+      "color": "d70a53",
+      "description": "Related to Debian"
+    },
+    {
+      "name": "ubuntu",
+      "color": "e95420",
+      "description": "Related to Ubuntu"
+    }
+  ]
 }

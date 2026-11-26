@@ -10,6 +10,15 @@ set -o pipefail
 # Run directly inside the current job container. Debusine tooling is expected to
 # be available already.
 
+# Build-dependency resolution tweaks applied here:
+#   * For trixie builds, the trixie-backports suite is added to
+#     extra_repositories so build-deps only available in backports can be found.
+#     forky (debian/latest) is a development suite with no backports, so it is
+#     skipped.
+#   * Every build uses the aptitude build-dep resolver (see
+#     configure_aptitude_resolver below), which copes with low-priority
+#     backports far better than the default apt resolver.
+
 # Dependencies:
 #   debusine-client, python3-debusine, yq
 
@@ -71,6 +80,50 @@ apply_extra_repositories_workaround() {
     mv "$tmpfile" "$yaml_file"
 }
 
+# Make the sbuild tasks for this build use the aptitude build-dep resolver.
+#
+# Why task configuration instead of a workflow parameter:
+#   build_dep_resolver cannot be passed as debian_pipeline (or sbuild) workflow
+#   task_data. Those workflow-data models forbid unknown keys (pydantic
+#   extra="forbid") and simply do not define the field; the sbuild workflow only
+#   ever sets it internally (aspcud for debian:experimental). The field exists
+#   solely on the low-level Sbuild *worker* task. Debusine's supported mechanism
+#   for overriding worker-task data is a debusine:task-configuration collection:
+#   entries matching (task_type, task_name, ...) are merged into the task's
+#   task_data when it becomes pending. So we set it there.
+#
+# Why this is safe and correctly scoped:
+#   The collection is created in the ephemeral child workspace this run just
+#   created and owns (the CI token is its owner). The override therefore applies
+#   only to this build's sbuild task(s) and cannot affect any other build,
+#   branch, or shared workspace. The workspace - and this configuration with it -
+#   is discarded when the run ends. The child does not have a task-configuration
+#   collection by default (it is not a singleton category), so we create one.
+#
+# Timing: this runs after the child workspace exists but before the
+# debian_pipeline workflow starts; the override is read later, when each sbuild
+# work request becomes pending during orchestration.
+#
+# subject/context are intentionally omitted: a bare Worker/sbuild entry matches
+# every sbuild task, and this throwaway workspace only ever builds one package.
+configure_aptitude_resolver() {
+    local tmp
+    debusine collection create default@debusine:task-configuration < /dev/null
+    tmp=$(mktemp -d)
+    (
+        cd "$tmp"
+        debusine task-config pull --workspace "$workspace" default
+        cat > sbuild-aptitude.yaml <<END
+task_type: Worker
+task_name: sbuild
+override_values:
+  build_dep_resolver: aptitude
+END
+        debusine task-config push
+    )
+    rm -rf "$tmp"
+}
+
 parent_workspace=${DEBUSINE_PARENT_WORKSPACE:-qli-ci}
 child_ci_suffix=gh-${GITHUB_REPOSITORY_ID:-0}-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-0}-${JOB_INDEX:-0}
 workspace="${parent_workspace}-${child_ci_suffix}"
@@ -92,6 +145,7 @@ workflow_start_output=$(echo "suffix: $child_ci_suffix"|debusine workflow start 
 echo "Workflow start output: $workflow_start_output" >&2
 workflow_id=$(echo "$workflow_start_output"|yq -r .id)
 "$lib_dir"/poll_workflow.py "$workflow_id"
+configure_aptitude_resolver
 debusine archive suite create \
     --architecture all \
     --architecture amd64 \
@@ -116,11 +170,31 @@ codename: $SUITE
 suite: $SUITE@debian:suite
 source_artifact: ${artifact_id}@artifacts
 END
-if [ -n "${EXTRA_BUILD_DEP_WORKSPACES:-}" ]; then
+# Enable backports for trixie so build-deps only available there can be found.
+# Only trixie has a backports suite; forky (debian/latest) is a development
+# suite without one. No signing_key is needed: deb.debian.org is signed by the
+# Debian archive key already trusted via debian-archive-keyring in the chroot.
+_enable_backports=
+[ "$SUITE" = trixie ] && _enable_backports=1
+
+if [ -n "${EXTRA_BUILD_DEP_WORKSPACES:-}" ] || [ -n "$_enable_backports" ]; then
     echo "extra_repositories:" >> "$_parameters_yaml"
+fi
+if [ -n "${EXTRA_BUILD_DEP_WORKSPACES:-}" ]; then
     for _ws in $EXTRA_BUILD_DEP_WORKSPACES; do
         echo "  - suite: //workspace=${_ws}/${SUITE}@debian:suite" >> "$_parameters_yaml"
     done
+fi
+if [ -n "$_enable_backports" ]; then
+    cat >> "$_parameters_yaml" <<END
+  - url: http://deb.debian.org/debian
+    suite: ${SUITE}-backports
+    components:
+      - main
+      - contrib
+      - non-free
+      - non-free-firmware
+END
 fi
 apply_extra_repositories_workaround "$_parameters_yaml"
 echo "::group::Generated debian_pipeline parameters:" >&2

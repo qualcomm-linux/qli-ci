@@ -174,6 +174,63 @@ def delete_repo_variable(repo: str, name: str, dry_run: bool) -> None:
     )
 
 
+def get_repo_labels(repo: str) -> Dict[str, Dict[str, str]]:
+    """Get all repository labels as a name -> {color, description} dict."""
+    stdout = run_gh_command(["api", "--paginate", f"repos/{repo}/labels"])
+    data = json.loads(stdout)
+    return {
+        label["name"]: {
+            "color": label.get("color") or "",
+            "description": label.get("description") or "",
+        }
+        for label in data
+    }
+
+
+def create_label(repo: str, name: str, color: str, description: str, dry_run: bool) -> None:
+    """Create an issue/PR label."""
+    if dry_run:
+        print(f"  Would create label '{name}'")
+        return
+
+    run_gh_command(
+        [
+            "api",
+            f"repos/{repo}/labels",
+            "-X",
+            "POST",
+            "-f",
+            f"name={name}",
+            "-f",
+            f"color={color}",
+            "-f",
+            f"description={description}",
+        ]
+    )
+
+
+def update_label(repo: str, name: str, color: str, description: str, dry_run: bool) -> None:
+    """Update an existing label's colour and description to match the spec."""
+    if dry_run:
+        print(f"  Would update label '{name}'")
+        return
+
+    run_gh_command(
+        [
+            "api",
+            f"repos/{repo}/labels/{name}",
+            "-X",
+            "PATCH",
+            "-f",
+            f"new_name={name}",
+            "-f",
+            f"color={color}",
+            "-f",
+            f"description={description}",
+        ]
+    )
+
+
 def get_user_id(username: str) -> int:
     """Get a GitHub user's numeric ID."""
     stdout = run_gh_command(["api", f"users/{username}"])
@@ -477,6 +534,38 @@ def configure_repository(repo: str, debusine_host: str, dry_run: bool, force: bo
                 "(requires org admin access with the admin:org scope) - "
                 "an org admin must grant it manually"
             )
+
+    print()
+
+    # 6. Check issue/PR labels
+    print("Checking labels...")
+    existing_labels = get_repo_labels(repo)
+    for label in CONFIG["labels"]:
+        name = label["name"]
+        color = label["color"]
+        description = label["description"]
+        current = existing_labels.get(name)
+        if current is None:
+            print(f"❌ Label '{name}' does not exist")
+            changes_needed = True
+            if not dry_run:
+                create_label(repo, name, color, description, dry_run)
+                print(f"✓ Created label '{name}'")
+            else:
+                create_label(repo, name, color, description, dry_run)
+        elif current["color"].lower() != color.lower() or current["description"] != description:
+            print(
+                f"❌ Label '{name}' should have colour '{color}' and description "
+                f"'{description}' (currently: '{current['color']}' / '{current['description']}')"
+            )
+            changes_needed = True
+            if not dry_run:
+                update_label(repo, name, color, description, dry_run)
+                print(f"✓ Updated label '{name}'")
+            else:
+                update_label(repo, name, color, description, dry_run)
+        else:
+            print(f"✓ Label '{name}' is correctly defined")
 
     print()
 

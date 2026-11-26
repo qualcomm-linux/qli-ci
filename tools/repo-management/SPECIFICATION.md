@@ -187,6 +187,34 @@ disabled.
 
 No environment secret is required in `Axiom` at this time.
 
+## Labels
+
+The following issue/pull-request labels must be **defined** on the
+repository, each with exactly the colour (a six-digit hex value, written
+here without the leading `#`) and description shown:
+
+| Label       | Colour   | Description                       |
+|-------------|----------|-----------------------------------|
+| `ostt-help` | `008672` | Needs help from the OSTT team     |
+| `debian`    | `d70a53` | Related to Debian                 |
+| `ubuntu`    | `e95420` | Related to Ubuntu                 |
+
+The `debian` and `ubuntu` colours and descriptions are the Debian and
+Ubuntu brand colours requested in
+<https://github.com/qualcomm-linux/qli-ci/issues/189>. The `ostt-help`
+colour is GitHub's conventional "help wanted" teal, chosen because the
+label is help-oriented and the teal is clearly distinct from the warm
+Debian and Ubuntu colours.
+
+This section covers label *definitions* only: the labels must exist so
+that they can be applied manually to issues and pull requests. The
+tooling does not assign any of these labels to an issue or pull request.
+
+A label is compliant when it exists with exactly the colour and
+description shown above. A missing label must be created; a label that
+exists with a different colour or description must be updated to match.
+Labels not listed here are left untouched.
+
 ## Workflow Files
 
 Workflow files must be present and be duplicates of the corresponding
